@@ -199,7 +199,7 @@ async function synthesizeGoogleTts(job: { id: string; text: string; voice: strin
   await writeFile(join(ttsDir, `${job.id}.mp3`), Buffer.from(body.audioContent, "base64"));
 
   return {
-    audioUrl: `${apiPublicUrl}/storage/tts/${job.id}.mp3`,
+    audioUrl: `data:audio/mpeg;base64,${body.audioContent}`,
     voiceName
   };
 }
