@@ -193,7 +193,8 @@ function TextWidget({ widget }: { widget: OverlayWidget }) {
 
 function YoutubeIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" title="YouTube" overflow="visible">
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" overflow="visible">
+      <title>YouTube</title>
       <path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" />
       <path fill="#FFFFFF" d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
     </svg>
@@ -202,7 +203,8 @@ function YoutubeIcon({ className }: { className?: string }) {
 
 function TiktokIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 448 512" className={className} aria-hidden="true" title="TikTok" overflow="visible">
+    <svg viewBox="0 0 448 512" className={className} aria-hidden="true" overflow="visible">
+      <title>TikTok</title>
       <path fill="#24f6f0" d="M380.9 97.1C339 97.1 320.3 83.2 320.3 64.1v-6.9h-73.4v333.1c0 41.6-33.8 75.3-75.3 75.3s-75.3-33.8-75.3-75.3 33.8-75.3 75.3-75.3c10.4 0 20.3 2.1 29.3 5.9v-79.6c-9.4-2.3-19.2-3.6-29.3-3.6-81.8 0-148.1 66.3-148.1 148.1S89.5 456 171.3 456s148.1-66.3 148.1-148.1V191.7c31.3 24.3 71.1 38.6 114.1 38.6v-75.8c-18.7 0-36.6-4.9-52.6-13.7z" />
       <path fill="#ff0050" d="M394.3 103.5C352.4 103.5 333.7 89.6 333.7 70.5v-6.9h-73.4v333.1c0 41.6-33.8 75.3-75.3 75.3s-75.3-33.8-75.3-75.3 33.8-75.3 75.3-75.3c10.4 0 20.3 2.1 29.3 5.9v-79.6c-9.4-2.3-19.2-3.6-29.3-3.6-81.8 0-148.1 66.3-148.1 148.1S102.9 462.4 184.7 462.4s148.1-66.3 148.1-148.1V198.1c31.3 24.3 71.1 38.6 114.1 38.6v-75.8c-18.7 0-36.6-4.9-52.6-13.7z" />
       <path fill="#ffffff" d="M387.6 100.3C345.7 100.3 327 86.4 327 67.3v-6.9h-73.4v333.1c0 41.6-33.8 75.3-75.3 75.3s-75.3-33.8-75.3-75.3 33.8-75.3 75.3-75.3c10.4 0 20.3 2.1 29.3 5.9v-79.6c-9.4-2.3-19.2-3.6-29.3-3.6-81.8 0-148.1 66.3-148.1 148.1S96.2 459.2 178 459.2s148.1-66.3 148.1-148.1V194.9c31.3 24.3 71.1 38.6 114.1 38.6v-75.8c-18.7 0-36.6-4.9-52.6-13.7z" />
