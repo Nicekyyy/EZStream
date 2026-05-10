@@ -24,10 +24,10 @@ export default function DashboardPage() {
     <DashboardShell title="ภาพรวม">
       {error ? <p className="text-red-600">{error}</p> : null}
       <div className="grid gap-4 md:grid-cols-4">
-        <ResourceCard><p className="text-sm text-slate-500">Creator</p><p className="text-xl font-semibold">{data?.creator?.displayName ?? "-"}</p></ResourceCard>
-        <ResourceCard><p className="text-sm text-slate-500">Overlays</p><p className="text-xl font-semibold">{data?.overlays.length ?? 0}</p></ResourceCard>
-        <ResourceCard><p className="text-sm text-slate-500">Widgets</p><p className="text-xl font-semibold">{data?.widgets.length ?? 0}</p></ResourceCard>
-        <ResourceCard><p className="text-sm text-slate-500">Rules</p><p className="text-xl font-semibold">{data?.rules.length ?? 0}</p></ResourceCard>
+        <ResourceCard><p className="text-sm text-slate-400">Creator</p><p className="text-xl font-semibold">{data?.creator?.displayName ?? "-"}</p></ResourceCard>
+        <ResourceCard><p className="text-sm text-slate-400">Overlays</p><p className="text-xl font-semibold">{data?.overlays.length ?? 0}</p></ResourceCard>
+        <ResourceCard><p className="text-sm text-slate-400">Widgets</p><p className="text-xl font-semibold">{data?.widgets.length ?? 0}</p></ResourceCard>
+        <ResourceCard><p className="text-sm text-slate-400">Rules</p><p className="text-xl font-semibold">{data?.rules.length ?? 0}</p></ResourceCard>
       </div>
     </DashboardShell>
   );

@@ -1,34 +1,23 @@
 import { Controller, Get, Inject, NotFoundException, Param } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 
-@Controller("public/overlay")
-export class PublicOverlayController {
+@Controller("public/widget")
+export class PublicWidgetController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  @Get(":token")
-  async get(@Param("token") token: string) {
-    const overlay = await this.findOverlay(token);
-    return {
-      id: overlay.id,
-      name: overlay.name,
-      token: overlay.token,
-      width: overlay.width,
-      height: overlay.height,
-      config: overlay.config
-    };
-  }
-
-  @Get(":token/state")
-  async state(@Param("token") token: string) {
-    const overlay = await this.findOverlay(token);
-    const widgets = await this.prisma.widget.findMany({
-      where: { overlayId: overlay.id, isEnabled: true },
-      include: { state: true },
-      orderBy: { zIndex: "asc" }
+  @Get(":id/state")
+  async state(@Param("id") id: string) {
+    const widget = await this.prisma.widget.findUnique({
+      where: { id },
+      include: { overlay: true, state: true }
     });
+    if (!widget || !widget.isEnabled || !widget.overlay.isActive) {
+      throw new NotFoundException("Widget not found");
+    }
+
     const recentEvents = await this.prisma.eventLog.findMany({
       where: {
-        creatorId: overlay.creatorId,
+        creatorId: widget.creatorId,
         eventType: "live.chat.message"
       },
       orderBy: { createdAt: "desc" },
@@ -37,23 +26,33 @@ export class PublicOverlayController {
     const chatMessages = recentEvents
       .map((event) => this.chatMessageFromEvent(event.id, event.createdAt, event.payload))
       .filter((message): message is NonNullable<typeof message> => Boolean(message))
-      .filter((message) => message.overlayId === overlay.id || message.overlayToken === overlay.token)
+      .filter((message) => message.overlayId === widget.overlayId || message.overlayToken === widget.overlay.token)
       .slice(0, 50)
       .reverse();
 
     return {
-      overlay,
-      widgets,
+      overlay: {
+        id: widget.overlay.id,
+        name: widget.overlay.name,
+        token: widget.overlay.token,
+        width: widget.overlay.width,
+        height: widget.overlay.height
+      },
+      widget: {
+        id: widget.id,
+        name: widget.name,
+        type: widget.type,
+        positionX: widget.positionX,
+        positionY: widget.positionY,
+        width: widget.width,
+        height: widget.height,
+        zIndex: widget.zIndex,
+        visibility: widget.visibility,
+        config: widget.config,
+        state: widget.state
+      },
       chatMessages
     };
-  }
-
-  private async findOverlay(token: string) {
-    const overlay = await this.prisma.overlay.findUnique({ where: { token } });
-    if (!overlay || !overlay.isActive) {
-      throw new NotFoundException("Overlay not found");
-    }
-    return overlay;
   }
 
   private chatMessageFromEvent(id: string, createdAt: Date, payload: unknown) {

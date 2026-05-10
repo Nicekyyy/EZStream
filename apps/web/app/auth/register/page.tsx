@@ -33,16 +33,16 @@ export default function RegisterPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <form onSubmit={submit} className="space-y-4 rounded-md border bg-white p-5 shadow-sm">
+      <form onSubmit={submit} className="space-y-4 rounded-md border border-slate-800 bg-slate-900 p-5 shadow-sm">
         <h1 className="text-2xl font-semibold">สมัครบัญชี Creator</h1>
-        <input className="w-full rounded-md border px-3 py-2" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ชื่อที่แสดง" />
-        <input className="w-full rounded-md border px-3 py-2" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" />
-        <input className="w-full rounded-md border px-3 py-2" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่านอย่างน้อย 8 ตัว" type="password" />
+        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ชื่อที่แสดง" />
+        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" />
+        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่านอย่างน้อย 8 ตัว" type="password" />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button disabled={loading} className="w-full rounded-md bg-slate-950 px-4 py-2 text-white disabled:opacity-50">
+        <button disabled={loading} className="w-full rounded-md bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">
           {loading ? "กำลังสมัคร" : "สมัครบัญชี"}
         </button>
-        <Link className="block text-sm text-slate-600 underline" href="/auth/login">มีบัญชีแล้ว</Link>
+        <Link className="block text-sm text-slate-400 underline" href="/auth/login">มีบัญชีแล้ว</Link>
       </form>
     </main>
   );

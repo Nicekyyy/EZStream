@@ -114,6 +114,9 @@ export class RuleEngineService {
     for (const rule of matchedRules) {
       await this.applyRule(creatorId, eventLog.id, rule, payload);
     }
+    if (eventType === "live.chat.message" && !matchedRules.some((rule) => this.hasSpeakTtsAction(rule))) {
+      await this.createDefaultChatTtsJob(creatorId, eventLog.id, payload);
+    }
 
     return this.prisma.eventLog.update({
       where: { id: eventLog.id },
@@ -161,7 +164,38 @@ export class RuleEngineService {
     }
   }
 
-  private async createTtsJob(creatorId: string, eventLogId: string, ruleId: string, action: RuleAction, payload: Record<string, unknown>) {
+  private hasSpeakTtsAction(rule: Rule) {
+    return jsonArray<RuleAction>(rule.actions).some((action) => action.type === "SPEAK_TTS");
+  }
+
+  private async createDefaultChatTtsJob(creatorId: string, eventLogId: string, payload: Record<string, unknown>) {
+    const overlayId = typeof payload.overlayId === "string" ? payload.overlayId : undefined;
+    const sameOverlayWidget = overlayId ? await this.prisma.widget.findFirst({
+      where: {
+        creatorId,
+        overlayId,
+        type: "TTS_WIDGET",
+        isEnabled: true
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, config: true }
+    }) : null;
+    const widget = sameOverlayWidget ?? await this.prisma.widget.findFirst({
+      where: {
+        creatorId,
+        type: "TTS_WIDGET",
+        isEnabled: true
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, config: true }
+    });
+    if (!widget) return;
+    const widgetConfig = jsonObject(widget.config);
+    const textTemplate = widgetConfig.includeSenderName === false ? "{message}" : "{displayName}: {message}";
+    await this.createTtsJob(creatorId, eventLogId, undefined, { type: "SPEAK_TTS", widgetId: widget.id, textTemplate }, payload);
+  }
+
+  private async createTtsJob(creatorId: string, eventLogId: string, ruleId: string | undefined, action: RuleAction, payload: Record<string, unknown>) {
     const text = renderTemplate(action.textTemplate ?? "{username} said {message}", payload);
     const widget = action.widgetId ? await this.prisma.widget.findFirst({ where: { id: action.widgetId, creatorId }, select: { config: true } }) : null;
     const widgetConfig = jsonObject(widget?.config);

@@ -28,8 +28,8 @@ export default function MediaPage() {
         <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         <button className="rounded-md bg-slate-950 px-4 py-2 text-white" disabled={!file}>Upload</button>
       </form>
-      {message ? <p className="mb-3 text-sm text-slate-600">{message}</p> : null}
-      <div className="grid gap-3">{items.map((item) => <ResourceCard key={item.id}><p>{item.originalName}</p><p className="text-sm text-slate-500">{item.type}</p></ResourceCard>)}</div>
+      {message ? <p className="mb-3 text-sm text-slate-400">{message}</p> : null}
+      <div className="grid gap-3">{items.map((item) => <ResourceCard key={item.id}><p>{item.originalName}</p><p className="text-sm text-slate-400">{item.type}</p></ResourceCard>)}</div>
     </DashboardShell>
   );
 }

@@ -2,17 +2,17 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
+import { io, type Socket } from "socket.io-client";
+import type { UnifiedChatMessage } from "@ezstream/shared";
 import { WidgetRenderer, type OverlayWidget } from "../../../components/widget-renderer";
 import { API_URL } from "../../../lib/api";
-import type { UnifiedChatMessage } from "@ezstream/shared";
 
-type OverlayState = {
-  overlay: { width: number; height: number; token: string };
-  widgets: OverlayWidget[];
+type WidgetState = {
+  overlay: { id: string; name: string; token: string; width: number; height: number };
+  widget: OverlayWidget;
   chatMessages?: UnifiedChatMessage[];
 };
-type TtsPayload = { ttsJobId?: string; text: string; voice: string; speed: number; pitch: number; volume: number; audioUrl?: string };
+type TtsPayload = { widgetId?: string; ttsJobId?: string; text: string; voice: string; speed: number; pitch: number; volume: number; audioUrl?: string };
 
 function numberInRange(value: unknown, fallback: number, min: number, max: number) {
   const numeric = typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -24,6 +24,7 @@ function parseTtsPayload(payload: unknown): TtsPayload | null {
   const value = payload as Record<string, unknown>;
   if (typeof value.text !== "string" || !value.text.trim()) return null;
   return {
+    widgetId: typeof value.widgetId === "string" ? value.widgetId : undefined,
     ttsJobId: typeof value.ttsJobId === "string" ? value.ttsJobId : undefined,
     text: value.text,
     voice: typeof value.voice === "string" ? value.voice : "default",
@@ -37,13 +38,6 @@ function parseTtsPayload(payload: unknown): TtsPayload | null {
 function selectVoice(preference: string) {
   const voices = window.speechSynthesis.getVoices();
   if (!voices.length || preference === "default") return undefined;
-  if (preference === "female") {
-    return (
-      voices.find((voice) => /female|woman|zira|susan|aria|jenny|samantha|karen|victoria|moira|tessa|veena|lekha|google us english/i.test(`${voice.name} ${voice.voiceURI}`)) ??
-      voices.find((voice) => /^en/i.test(voice.lang)) ??
-      voices[0]
-    );
-  }
   return voices.find((voice) => voice.name === preference || voice.voiceURI === preference);
 }
 
@@ -53,15 +47,22 @@ function mergeChatMessages(current: UnifiedChatMessage[], incoming: UnifiedChatM
   return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-50);
 }
 
-export default function OverlayPage() {
-  const { overlayToken } = useParams<{ overlayToken: string }>();
-  const [state, setState] = useState<OverlayState>();
+function payloadWidgetId(payload: unknown) {
+  return payload && typeof payload === "object" && "widgetId" in payload && typeof (payload as { widgetId?: unknown }).widgetId === "string"
+    ? (payload as { widgetId: string }).widgetId
+    : undefined;
+}
+
+export default function SingleWidgetPage() {
+  const { widgetId } = useParams<{ widgetId: string }>();
+  const [state, setState] = useState<WidgetState>();
   const [events, setEvents] = useState<string[]>([]);
   const [debug, setDebug] = useState(false);
+  const [chatMessages, setChatMessages] = useState<UnifiedChatMessage[]>([]);
   const ttsQueue = useRef<TtsPayload[]>([]);
   const isSpeaking = useRef(false);
   const currentAudio = useRef<HTMLAudioElement | null>(null);
-  const [chatMessages, setChatMessages] = useState<UnifiedChatMessage[]>([]);
+  const socketRef = useRef<Socket | null>(null);
 
   function speakNext() {
     if (isSpeaking.current || typeof window === "undefined") return;
@@ -94,15 +95,13 @@ export default function OverlayPage() {
     utterance.rate = next.speed;
     utterance.pitch = next.pitch;
     utterance.volume = next.volume;
-
-    const selectedVoice = selectVoice(next.voice);
-    if (selectedVoice) utterance.voice = selectedVoice;
+    const voice = selectVoice(next.voice);
+    if (voice) utterance.voice = voice;
 
     const finish = () => {
       isSpeaking.current = false;
       speakNext();
     };
-
     isSpeaking.current = true;
     utterance.onend = finish;
     utterance.onerror = finish;
@@ -111,56 +110,68 @@ export default function OverlayPage() {
 
   function enqueueTts(payload: unknown) {
     const next = parseTtsPayload(payload);
-    if (!next) return;
+    if (!next || (next.widgetId && next.widgetId !== widgetId)) return;
     ttsQueue.current.push(next);
     speakNext();
   }
 
   useEffect(() => {
-    const shouldDebug = window.location.pathname.includes("/overlay/preview/") || new URLSearchParams(window.location.search).get("debug") === "1";
+    const shouldDebug = new URLSearchParams(window.location.search).get("debug") === "1";
     setDebug(shouldDebug);
+
     const loadState = () =>
-      fetch(`${API_URL}/public/overlay/${overlayToken}/state?_t=${Date.now()}`, { cache: "no-store" })
+      fetch(`${API_URL}/public/widget/${widgetId}/state?_t=${Date.now()}`, { cache: "no-store" })
         .then((res) => res.json())
-        .then((nextState: OverlayState) => {
+        .then((nextState: WidgetState) => {
           setState(nextState);
           if (nextState.chatMessages?.length) {
             setChatMessages((prev) => mergeChatMessages(prev, nextState.chatMessages ?? []));
           }
+          return nextState;
         });
-    void loadState();
-    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
-    
-    const joinRoom = () => socket.emit("overlay.join", { token: overlayToken });
-    if (socket.connected) joinRoom();
-    socket.on("connect", joinRoom);
-    
-    for (const event of ["widget.updated", "widget.triggered", "widget.completed", "tts.queued", "tts.speak", "tts.completed", "goal.updated", "event.list.appended"]) {
-      socket.on(event, (payload) => {
-        if (shouldDebug) setEvents((items) => [`${event}: ${JSON.stringify(payload)}`, ...items].slice(0, 8));
-        if (event === "tts.speak") enqueueTts(payload);
-        void loadState();
+
+    let active = true;
+    void loadState().then((nextState) => {
+      if (!active) return;
+      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
+      socketRef.current = socket;
+      
+      const joinRoom = () => socket.emit("overlay.join", { token: nextState.overlay.token, widgetId });
+      if (socket.connected) joinRoom();
+      socket.on("connect", joinRoom);
+      
+      for (const event of ["widget.updated", "widget.triggered", "widget.completed", "tts.queued", "tts.speak", "tts.completed", "goal.updated", "event.list.appended"]) {
+        socket.on(event, (payload) => {
+          const targetWidgetId = payloadWidgetId(payload);
+          if (targetWidgetId && targetWidgetId !== widgetId) return;
+          if (shouldDebug) setEvents((items) => [`${event}: ${JSON.stringify(payload)}`, ...items].slice(0, 8));
+          if (event === "tts.speak") enqueueTts(payload);
+          void loadState();
+        });
+      }
+      socket.on("chat.message", (payload: UnifiedChatMessage) => {
+        setChatMessages((prev) => mergeChatMessages(prev, [payload]));
+        if (shouldDebug) setEvents((items) => [`chat.message: ${payload.displayName}: ${payload.message}`, ...items].slice(0, 8));
       });
-    }
-    socket.on("chat.message", (payload: UnifiedChatMessage) => {
-      setChatMessages((prev) => mergeChatMessages(prev, [payload]));
-      if (shouldDebug) setEvents((items) => [`chat.message: ${payload.displayName}: ${payload.message}`, ...items].slice(0, 8));
     });
+
     return () => {
-      socket.close();
+      active = false;
+      socketRef.current?.close();
+      socketRef.current = null;
       ttsQueue.current = [];
       isSpeaking.current = false;
       currentAudio.current?.pause();
       currentAudio.current = null;
       if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     };
-  }, [overlayToken]);
+  }, [widgetId]);
+
+  const widget = state?.widget ? { ...state.widget, positionX: 0, positionY: 0 } : undefined;
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-transparent text-white">
-      {state?.widgets.map((widget) => (
-        <WidgetRenderer key={widget.id} widget={widget} chatMessages={chatMessages} />
-      ))}
+    <main className="relative h-screen w-screen overflow-hidden bg-transparent text-white">
+      {widget ? <WidgetRenderer widget={widget} chatMessages={chatMessages} /> : null}
       {debug ? <aside className="absolute bottom-4 left-4 max-w-xl space-y-1 text-xs">{events.map((event, index) => <p key={index} className="rounded bg-black/60 px-2 py-1">{event}</p>)}</aside> : null}
     </main>
   );

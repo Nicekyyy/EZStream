@@ -42,6 +42,10 @@ class CreateWidgetDto {
 
   @IsOptional()
   @IsBoolean()
+  isEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   visibility?: boolean;
 
   @IsOptional()
@@ -83,6 +87,10 @@ class UpdateWidgetDto {
   @IsOptional()
   @IsInt()
   zIndex?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
 
   @IsOptional()
   @IsBoolean()

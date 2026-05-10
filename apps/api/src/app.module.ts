@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { AuditLogsModule } from "./audit-logs/audit-logs.module.js";
 import { AuthModule } from "./auth/auth.module.js";
+import { ChatSourcesModule } from "./chat-sources/chat-sources.module.js";
 import { RequestLoggerMiddleware } from "./common/request-logger.middleware.js";
 import { CreatorsModule } from "./creators/creators.module.js";
 import { EventsModule } from "./events/events.module.js";
@@ -41,7 +42,8 @@ import { WidgetsModule } from "./widgets/widgets.module.js";
     MediaModule,
     MockEventsModule,
     AuditLogsModule,
-    PublicModule
+    PublicModule,
+    ChatSourcesModule
   ],
   controllers: [HealthController]
 })

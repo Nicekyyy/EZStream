@@ -44,6 +44,18 @@ enum TtsJobStatus {
   FAILED
 }
 
+enum ChatPlatform {
+  TIKTOK
+  YOUTUBE
+}
+
+enum ChatSourceStatus {
+  DISCONNECTED
+  CONNECTING
+  CONNECTED
+  ERROR
+}
+
 enum MediaAssetType {
   IMAGE
   AUDIO
@@ -83,6 +95,7 @@ model Creator {
   apiTokens     ApiToken[]
   liveSessions  LiveSession[]
   auditLogs     AuditLog[]
+  chatSources   ChatSource[]
 }
 
 model Overlay {
@@ -101,6 +114,7 @@ model Overlay {
   widgets      Widget[]
   rules        Rule[]
   liveSessions LiveSession[]
+  chatSources  ChatSource[]
 
   @@index([creatorId])
 }
@@ -330,4 +344,27 @@ model LiveSession {
   @@index([creatorId])
   @@index([overlayId])
   @@index([startedAt])
+}
+
+model ChatSource {
+  id              String           @id @default(cuid())
+  creatorId       String
+  overlayId       String
+  platform        ChatPlatform
+  target          String
+  label           String?
+  status          ChatSourceStatus @default(DISCONNECTED)
+  isEnabled       Boolean          @default(true)
+  config          Json             @default("{}")
+  errorMessage    String?
+  lastConnectedAt DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  creator         Creator          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  overlay         Overlay          @relation(fields: [overlayId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId])
+  @@index([overlayId])
+  @@index([status])
 }

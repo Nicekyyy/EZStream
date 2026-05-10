@@ -68,3 +68,22 @@ export function resolveGoogleTtsVoiceName(value: unknown, fallback: string = def
 export function googleTtsVoiceLanguageCode(voiceName: string) {
   return googleTtsVoices.find((voice) => voice.name === voiceName)?.languageCode ?? "th-TH";
 }
+
+// ── Chat Overlay ──────────────────────────────────────────
+
+export const chatPlatforms = ["TIKTOK", "YOUTUBE"] as const;
+export type ChatPlatformType = (typeof chatPlatforms)[number];
+
+export type UnifiedChatMessage = {
+  id: string;
+  platform: "tiktok" | "youtube";
+  username: string;
+  displayName: string;
+  message: string;
+  avatarUrl?: string;
+  badges?: string[];
+  timestamp: number;
+};
+
+export const CHAT_COMMANDS_CHANNEL = "ezstream:chat-commands";
+export const REALTIME_CHANNEL = "ezstream:realtime";

@@ -32,15 +32,15 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <form onSubmit={submit} className="space-y-4 rounded-md border bg-white p-5 shadow-sm">
+      <form onSubmit={submit} className="space-y-4 rounded-md border border-slate-800 bg-slate-900 p-5 shadow-sm">
         <h1 className="text-2xl font-semibold">เข้าสู่ระบบ</h1>
-        <input className="w-full rounded-md border px-3 py-2" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" />
-        <input className="w-full rounded-md border px-3 py-2" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่าน" type="password" />
+        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" />
+        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่าน" type="password" />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button disabled={loading} className="w-full rounded-md bg-slate-950 px-4 py-2 text-white disabled:opacity-50">
+        <button disabled={loading} className="w-full rounded-md bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">
           {loading ? "กำลังเข้าสู่ระบบ" : "เข้าสู่ระบบ"}
         </button>
-        <Link className="block text-sm text-slate-600 underline" href="/auth/register">สมัครบัญชีใหม่</Link>
+        <Link className="block text-sm text-slate-400 underline" href="/auth/register">สมัครบัญชีใหม่</Link>
       </form>
     </main>
   );

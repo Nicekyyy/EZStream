@@ -12,7 +12,7 @@ export default function EventsPage() {
   useEffect(() => void api<EventLog[]>("/events").then(setEvents), []);
   return (
     <DashboardShell title="Events">
-      <div className="grid gap-3">{events.map((event) => <ResourceCard key={event.id}><p className="font-medium">{event.eventType}</p><p className="text-sm text-slate-500">{event.status} · matched {event.matchedRuleIds.length}</p></ResourceCard>)}</div>
+      <div className="grid gap-3">{events.map((event) => <ResourceCard key={event.id}><p className="font-medium">{event.eventType}</p><p className="text-sm text-slate-400">{event.status} · matched {event.matchedRuleIds.length}</p></ResourceCard>)}</div>
     </DashboardShell>
   );
 }

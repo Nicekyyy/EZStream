@@ -11,6 +11,7 @@ const navItems = [
   ["/dashboard/rules", "Rules"],
   ["/dashboard/events", "Events"],
   ["/dashboard/tts", "TTS"],
+  ["/dashboard/chat", "Chat"],
   ["/dashboard/media", "Media"],
   ["/dashboard/mock-events", "Mock Events"]
 ];
@@ -18,18 +19,18 @@ const navItems = [
 export function DashboardShell({ title, children }: { title: string; children: React.ReactNode }) {
   const router = useRouter();
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-950">
-      <header className="border-b bg-white">
+    <main className="min-h-screen bg-slate-950 text-white">
+      <header className="border-b bg-slate-900">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <Link href="/dashboard" className="text-lg font-semibold">EZStream</Link>
           <nav className="flex flex-wrap gap-1 text-sm">
             {navItems.map(([href, label]) => (
-              <Link key={href} href={href} className="rounded-md px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950">
+              <Link key={href} href={href} className="rounded-md px-3 py-2 text-slate-400 hover:bg-slate-800 hover:text-white">
                 {label}
               </Link>
             ))}
             <button
-              className="rounded-md px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+              className="rounded-md px-3 py-2 text-slate-400 hover:bg-slate-800 hover:text-white"
               onClick={() => {
                 clearToken();
                 router.push("/auth/login");

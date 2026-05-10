@@ -1,6 +1,7 @@
-import { defaultGoogleTtsVoiceName, googleTtsVoiceLanguageCode, resolveGoogleTtsVoiceName } from "@ezstream/shared";
-import { Prisma, PrismaClient, TtsJobStatus, WidgetActionStatus } from "@prisma/client";
-import { Worker } from "bullmq";
+import { defaultGoogleTtsVoiceName, googleTtsVoiceLanguageCode, resolveGoogleTtsVoiceName, CHAT_COMMANDS_CHANNEL, REALTIME_CHANNEL } from "@ezstream/shared";
+import type { UnifiedChatMessage } from "@ezstream/shared";
+import { Prisma, PrismaClient, TtsJobStatus, WidgetActionStatus, type Rule } from "@prisma/client";
+import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 import { createSign } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -14,6 +15,8 @@ const googleTtsVoice = resolveGoogleTtsVoiceName(process.env.GOOGLE_TTS_VOICE, d
 const googleTtsEndpoint = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const prisma = new PrismaClient();
 const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+const ttsJobsQueue = new Queue("tts-jobs", { connection });
+const widgetActionsQueue = new Queue("widget-actions", { connection });
 const lastTtsByCreator = new Map<string, number>();
 let googleAccessToken: { token: string; expiresAt: number } | undefined;
 
@@ -38,6 +41,80 @@ function creatorCooldownMs(settings: unknown) {
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
   }
   return 0;
+}
+
+type Condition = {
+  field: string;
+  operator: string;
+  value?: unknown;
+};
+
+type RuleAction = {
+  type: string;
+  widgetId?: string;
+  textTemplate?: string;
+  amountTemplate?: string;
+  [key: string]: unknown;
+};
+
+function getPathValue(payload: Record<string, unknown>, path: string) {
+  return path.split(".").reduce<unknown>((value, key) => {
+    if (value && typeof value === "object" && key in value) {
+      return (value as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, payload);
+}
+
+function compareNumber(left: unknown, right: unknown, comparer: (a: number, b: number) => boolean) {
+  const a = Number(left);
+  const b = Number(right);
+  return Number.isFinite(a) && Number.isFinite(b) && comparer(a, b);
+}
+
+function matchesCondition(payload: Record<string, unknown>, condition: Condition) {
+  const actual = getPathValue(payload, condition.field);
+  const expected = condition.value;
+
+  switch (condition.operator) {
+    case "equals":
+      return actual === expected;
+    case "notEquals":
+      return actual !== expected;
+    case "contains":
+      return String(actual ?? "").includes(String(expected ?? ""));
+    case "notContains":
+      return !String(actual ?? "").includes(String(expected ?? ""));
+    case "greaterThan":
+      return compareNumber(actual, expected, (a, b) => a > b);
+    case "greaterThanOrEqual":
+      return compareNumber(actual, expected, (a, b) => a >= b);
+    case "lessThan":
+      return compareNumber(actual, expected, (a, b) => a < b);
+    case "lessThanOrEqual":
+      return compareNumber(actual, expected, (a, b) => a <= b);
+    case "exists":
+      return actual !== undefined && actual !== null;
+    case "in":
+      return Array.isArray(expected) && expected.includes(actual);
+    default:
+      return false;
+  }
+}
+
+function renderTemplate(template: string, payload: Record<string, unknown>) {
+  return template.replace(/\{([a-zA-Z0-9_.]+)\}/g, (_match, path: string) => {
+    const value = getPathValue(payload, path);
+    return value === undefined || value === null ? "" : String(value);
+  });
+}
+
+function jsonArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function jsonObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function base64Url(value: string) {
@@ -226,7 +303,7 @@ async function processTtsJob(ttsJobId: string) {
     JSON.stringify({
       room: `overlay-token:${job.widget.overlay.token}`,
       event: "tts.speak",
-      payload
+      payload: { ...payload, widgetId: job.widgetId }
     })
   );
   await connection.publish(
@@ -234,7 +311,7 @@ async function processTtsJob(ttsJobId: string) {
     JSON.stringify({
       room: `overlay-token:${job.widget.overlay.token}`,
       event: "tts.completed",
-      payload: { ttsJobId, text }
+      payload: { ttsJobId, widgetId: job.widgetId, text }
     })
   );
 
@@ -250,6 +327,528 @@ async function processTtsJob(ttsJobId: string) {
 
   return completed;
 }
+
+// ── Chat Connector Manager ────────────────────────────────────────────
+
+function ruleMatches(rule: Rule, payload: Record<string, unknown>) {
+  const conditions = jsonArray<Condition>(rule.conditions);
+  return conditions.every((condition) => matchesCondition(payload, condition));
+}
+
+async function publishWidget(widgetId: string, event: string, payload: unknown) {
+  const widget = await prisma.widget.findUnique({ where: { id: widgetId }, include: { overlay: true } });
+  if (!widget) return;
+  await connection.publish(
+    REALTIME_CHANNEL,
+    JSON.stringify({
+      room: `overlay-token:${widget.overlay.token}`,
+      event,
+      payload
+    })
+  );
+}
+
+async function createTtsJobFromRule(creatorId: string, eventLogId: string, ruleId: string | undefined, action: RuleAction, payload: Record<string, unknown>) {
+  const text = renderTemplate(action.textTemplate ?? "{username} said {message}", payload);
+  const widget = action.widgetId
+    ? await prisma.widget.findFirst({ where: { id: action.widgetId, creatorId }, select: { config: true } })
+    : null;
+  const widgetConfig = jsonObject(widget?.config);
+  const voice = resolveGoogleTtsVoiceName(action.voice ?? widgetConfig.voice, googleTtsVoice);
+  const speed = typeof widgetConfig.speed === "number" ? widgetConfig.speed : 1;
+  const pitch = typeof widgetConfig.pitch === "number" ? widgetConfig.pitch : 1;
+  const volume = typeof widgetConfig.volume === "number" ? widgetConfig.volume : 1;
+  const job = await prisma.ttsJob.create({
+    data: {
+      creatorId,
+      widgetId: action.widgetId,
+      eventLogId,
+      ruleId,
+      text,
+      voice,
+      speed,
+      pitch,
+      volume,
+      payload: {
+        type: "tts.audio",
+        text,
+        voice,
+        speed,
+        pitch,
+        volume
+      } as Prisma.InputJsonValue
+    }
+  });
+
+  await ttsJobsQueue.add("tts.speak", { ttsJobId: job.id });
+  if (action.widgetId) {
+    await publishWidget(action.widgetId, "tts.queued", { ttsJobId: job.id, widgetId: action.widgetId, text });
+  }
+}
+
+function hasSpeakTtsAction(rule: Rule) {
+  return jsonArray<RuleAction>(rule.actions).some((action) => action.type === "SPEAK_TTS");
+}
+
+async function createDefaultChatTtsJob(creatorId: string, overlayId: string, eventLogId: string, payload: Record<string, unknown>) {
+  const widget = await prisma.widget.findFirst({
+    where: {
+      creatorId,
+      type: "TTS_WIDGET",
+      isEnabled: true
+    },
+    orderBy: [{ overlayId: "asc" }, { createdAt: "asc" }],
+    select: { id: true, config: true }
+  });
+  const sameOverlayWidget = await prisma.widget.findFirst({
+    where: {
+      creatorId,
+      overlayId,
+      type: "TTS_WIDGET",
+      isEnabled: true
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, config: true }
+  });
+  const targetWidget = sameOverlayWidget ?? widget;
+  if (!targetWidget) return;
+  const widgetConfig = jsonObject(targetWidget.config);
+  const textTemplate = widgetConfig.includeSenderName === false ? "{message}" : "{displayName}: {message}";
+
+  await createTtsJobFromRule(
+    creatorId,
+    eventLogId,
+    undefined,
+    { type: "SPEAK_TTS", widgetId: targetWidget.id, textTemplate },
+    payload
+  );
+}
+
+async function applyChatRule(creatorId: string, eventLogId: string, rule: Rule, payload: Record<string, unknown>) {
+  const actions = jsonArray<RuleAction>(rule.actions);
+
+  for (const action of actions) {
+    if (action.type === "SPEAK_TTS") {
+      await createTtsJobFromRule(creatorId, eventLogId, rule.id, action, payload);
+      continue;
+    }
+
+    if (!action.widgetId) continue;
+
+    const widgetAction = await prisma.widgetAction.create({
+      data: {
+        creatorId,
+        widgetId: action.widgetId,
+        eventLogId,
+        ruleId: rule.id,
+        actionType: action.type,
+        payload: {
+          ...action,
+          renderedText: action.textTemplate ? renderTemplate(action.textTemplate, payload) : undefined,
+          amount: action.amountTemplate ? Number(renderTemplate(action.amountTemplate, payload)) : undefined,
+          eventPayload: payload
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    await widgetActionsQueue.add("widget.action", { widgetActionId: widgetAction.id });
+    await publishWidget(action.widgetId, "widget.triggered", {
+      widgetActionId: widgetAction.id,
+      actionType: action.type,
+      payload: widgetAction.payload
+    });
+  }
+}
+
+async function triggerChatRules(chatSourceId: string, message: UnifiedChatMessage) {
+  const source = await prisma.chatSource.findUnique({
+    where: { id: chatSourceId },
+    include: { overlay: true }
+  });
+  if (!source || !source.isEnabled || !source.overlay.isActive) return;
+
+  const payload = {
+    id: message.id,
+    platform: message.platform,
+    username: message.username,
+    displayName: message.displayName,
+    message: message.message,
+    avatarUrl: message.avatarUrl,
+    badges: message.badges ?? [],
+    timestamp: message.timestamp,
+    chatSourceId,
+    overlayId: source.overlayId,
+    overlayToken: source.overlay.token
+  };
+
+  const eventLog = await prisma.eventLog.create({
+    data: {
+      creatorId: source.creatorId,
+      eventType: "live.chat.message",
+      payload: payload as Prisma.InputJsonValue,
+      status: "RECEIVED"
+    }
+  });
+
+  await connection.publish(
+    REALTIME_CHANNEL,
+    JSON.stringify({
+      room: `creator:${source.creatorId}`,
+      event: "event.received",
+      payload: { eventLogId: eventLog.id, eventType: "live.chat.message", payload }
+    })
+  );
+
+  const rules = await prisma.rule.findMany({
+    where: {
+      creatorId: source.creatorId,
+      eventType: "live.chat.message",
+      isEnabled: true,
+      OR: [{ overlayId: null }, { overlayId: source.overlayId }]
+    },
+    orderBy: [{ priority: "asc" }, { createdAt: "asc" }]
+  });
+
+  const matchedRules = rules.filter((rule) => ruleMatches(rule, payload));
+  for (const rule of matchedRules) {
+    await applyChatRule(source.creatorId, eventLog.id, rule, payload);
+  }
+  if (!matchedRules.some(hasSpeakTtsAction)) {
+    await createDefaultChatTtsJob(source.creatorId, source.overlayId, eventLog.id, payload);
+  }
+
+  await prisma.eventLog.update({
+    where: { id: eventLog.id },
+    data: {
+      status: matchedRules.length > 0 ? "MATCHED" : "PROCESSED",
+      matchedRuleIds: matchedRules.map((rule) => rule.id)
+    }
+  });
+}
+
+type ChatConnection = { connectionId: string; disconnect: () => void | Promise<void> };
+const activeChats = new Map<string, ChatConnection>();
+
+function isActiveChatConnection(chatSourceId: string, connectionId: string) {
+  return activeChats.get(chatSourceId)?.connectionId === connectionId;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeAvatarUrl(url: unknown) {
+  if (typeof url !== "string" || !url.trim()) return undefined;
+  const trimmed = url.trim();
+  if (trimmed.startsWith("//")) return `https:${trimmed}`;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  return undefined;
+}
+
+function firstImageUrl(image: unknown) {
+  if (!image || typeof image !== "object") return undefined;
+  const value = image as { url?: unknown; urls?: unknown; mUrls?: unknown };
+  const candidates = [value.url, value.urls, value.mUrls];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      const url = candidate.map(normalizeAvatarUrl).find(Boolean);
+      if (url) return url;
+    } else {
+      const url = normalizeAvatarUrl(candidate);
+      if (url) return url;
+    }
+  }
+  return undefined;
+}
+
+function resolveTikTokAvatarUrl(user: unknown) {
+  if (!user || typeof user !== "object") return undefined;
+  const value = user as {
+    profilePictureUrl?: unknown;
+    profilePicture?: unknown;
+    profilePictureMedium?: unknown;
+    profilePictureLarge?: unknown;
+    avatarThumb?: unknown;
+  };
+
+  return (
+    normalizeAvatarUrl(value.profilePictureUrl) ??
+    firstImageUrl(value.profilePictureMedium) ??
+    firstImageUrl(value.profilePicture) ??
+    firstImageUrl(value.profilePictureLarge) ??
+    firstImageUrl(value.avatarThumb)
+  );
+}
+
+async function updateChatSourceStatus(id: string, status: string, overlayToken: string, errorMessage: string | null = null) {
+  await prisma.chatSource.update({
+    where: { id },
+    data: { status: status as any, errorMessage, ...(status === "CONNECTED" ? { lastConnectedAt: new Date() } : {}) }
+  }).catch(() => undefined);
+
+  await connection.publish(
+    REALTIME_CHANNEL,
+    JSON.stringify({
+      room: `overlay-token:${overlayToken}`,
+      event: "chat-source.status",
+      payload: { id, status, errorMessage }
+    })
+  );
+}
+
+async function publishChatMessage(chatSourceId: string, overlayToken: string, message: UnifiedChatMessage) {
+  await connection.publish(
+    REALTIME_CHANNEL,
+    JSON.stringify({ room: `overlay-token:${overlayToken}`, event: "chat.message", payload: message })
+  );
+  await triggerChatRules(chatSourceId, message).catch((error) => {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[chat] Rule trigger error: ${msg}`);
+  });
+}
+
+async function connectTikTok(chatSourceId: string, target: string, overlayToken: string) {
+  const requestId = Math.random().toString(36).slice(2);
+  let lastError: unknown = null;
+  activeChats.set(chatSourceId, { connectionId: requestId, disconnect: () => undefined });
+  try {
+    const { TikTokLiveConnection, WebcastEvent, ControlEvent } = await import("tiktok-live-connector");
+    if (!isActiveChatConnection(chatSourceId, requestId)) return;
+    const username = target.replace(/^@/, "");
+
+    for (const attempt of [
+      { connectionId: `${requestId}:room`, connectWithUniqueId: false },
+      { connectionId: `${requestId}:unique`, connectWithUniqueId: true }
+    ]) {
+      if (!activeChats.has(chatSourceId)) return;
+
+      const tiktok = new TikTokLiveConnection(username, {
+        processInitialData: false,
+        fetchRoomInfoOnConnect: false,
+        enableExtendedGiftInfo: false,
+        connectWithUniqueId: attempt.connectWithUniqueId,
+        wsClientHeaders: {
+          Origin: "https://www.tiktok.com"
+        }
+      });
+
+      activeChats.set(chatSourceId, {
+        connectionId: attempt.connectionId,
+        disconnect: async () => {
+          await Promise.resolve(tiktok.disconnect()).catch(() => undefined);
+          await wait(1500);
+        }
+      });
+
+      tiktok.on(WebcastEvent.CHAT, (data: { msgId?: string; user?: { uniqueId?: string; nickname?: string; profilePictureUrl?: string }; comment?: string }) => {
+        if (!isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        const message: UnifiedChatMessage = {
+          id: `tiktok-${data.msgId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
+          platform: "tiktok",
+          username: data.user?.uniqueId ?? "unknown",
+          displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
+          message: data.comment ?? "",
+          avatarUrl: resolveTikTokAvatarUrl(data.user),
+          badges: [],
+          timestamp: Date.now()
+        };
+        void publishChatMessage(chatSourceId, overlayToken, message);
+      });
+
+      tiktok.on(ControlEvent.DISCONNECTED, () => {
+        if (!isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        console.log(`[chat] TikTok disconnected: @${username}`);
+        activeChats.delete(chatSourceId);
+        void updateChatSourceStatus(chatSourceId, "DISCONNECTED", overlayToken);
+      });
+
+      try {
+        await tiktok.connect();
+        if (!isActiveChatConnection(chatSourceId, attempt.connectionId)) {
+          await Promise.resolve(tiktok.disconnect()).catch(() => undefined);
+          return;
+        }
+        console.log(`[chat] TikTok connected: @${username} (${attempt.connectionId})`);
+
+        await updateChatSourceStatus(chatSourceId, "CONNECTED", overlayToken);
+        return;
+      } catch (error) {
+        lastError = error;
+        const msg = error instanceof Error ? error.message : String(error);
+        if (!isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        if (!attempt.connectWithUniqueId && msg.includes("Unexpected server response: 200")) {
+          activeChats.set(chatSourceId, { connectionId: `${requestId}:retry`, disconnect: () => undefined });
+          await Promise.resolve(tiktok.disconnect()).catch(() => undefined);
+          await wait(1500);
+          continue;
+        }
+        break;
+      }
+    }
+  } catch (error) {
+    lastError = error;
+  }
+
+  if (!activeChats.has(chatSourceId)) return;
+  const msg = lastError instanceof Error ? lastError.message : String(lastError ?? "Unknown TikTok connection error");
+  console.error(`[chat] TikTok connect error: ${msg}`);
+  activeChats.delete(chatSourceId);
+  await updateChatSourceStatus(chatSourceId, "ERROR", overlayToken, msg);
+}
+
+async function connectYouTube(chatSourceId: string, target: string, overlayToken: string) {
+  try {
+    const connectionId = Math.random().toString(36).slice(2);
+    const { Innertube } = await import("youtubei.js");
+    const yt = await Innertube.create();
+
+    let liveVideoId: string | null = null;
+
+    // Check if target is a video URL or video ID
+    const videoMatch = target.match(/(?:v=|live\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (videoMatch) {
+      liveVideoId = videoMatch[1];
+    } else if (/^[A-Za-z0-9_-]{11}$/.test(target)) {
+      liveVideoId = target;
+    } else {
+      // It's a channel handle or URL
+      const channelHandle = target.replace(/^@/, "").replace(/https?:\/\/(www\.)?youtube\.com\/(@)?/i, "").split("/")[0].split("?")[0];
+      const channelUrl = channelHandle.startsWith("UC") ? `https://www.youtube.com/channel/${channelHandle}` : `https://www.youtube.com/@${channelHandle}`;
+      
+      const channel = await yt.resolveURL(channelUrl);
+      if (!channel?.payload?.browseId) throw new Error(`ค้นหาช่อง YouTube ไม่พบ: ${target}`);
+      
+      const channelPage = await yt.getChannel(channel.payload.browseId);
+      const liveTab = await channelPage.getLiveStreams().catch(() => null);
+      const videos = liveTab?.videos || [];
+      
+      // Find the first video that is currently live
+      const liveVideo = videos.find((v: any) => v.is_live);
+      if (liveVideo?.id) {
+        liveVideoId = liveVideo.id;
+      } else if (videos.length > 0 && videos[0]?.id) {
+        liveVideoId = videos[0].id;
+      }
+    }
+
+    if (!liveVideoId) throw new Error(`ไม่พบไลฟ์สตรีมที่กำลังออกอากาศสำหรับ: ${target} (ถ้าไลฟ์อยู่ แนะนำให้ใส่ URL ของไลฟ์โดยตรง)`);
+
+    const videoInfo = await yt.getInfo(liveVideoId);
+    if (!videoInfo.basic_info.is_live) throw new Error(`วิดีโอนี้ไม่ได้กำลังไลฟ์อยู่: ${liveVideoId}`);
+    
+    const livechat = videoInfo.getLiveChat();
+    activeChats.set(chatSourceId, { connectionId, disconnect: () => livechat.stop() });
+
+    console.log(`[chat] YouTube connected: ${target} (video: ${liveVideoId}, ${connectionId})`);
+    await updateChatSourceStatus(chatSourceId, "CONNECTED", overlayToken);
+
+    livechat.on("chat-update", (action: any) => {
+      if (activeChats.get(chatSourceId)?.connectionId !== connectionId) return;
+      if (action?.type !== "AddChatItemAction") return;
+
+      const item = action.item;
+      if (!item || item.type !== "LiveChatTextMessage") return;
+
+      const msgText = typeof item.message === "string" ? item.message :
+                      item.message?.text ? String(item.message.text) :
+                      item.message?.toString?.() ?? "";
+      if (!msgText) return;
+
+      const message: UnifiedChatMessage = {
+        id: `youtube-${item.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
+        platform: "youtube",
+        username: item.author?.name ?? "unknown",
+        displayName: item.author?.name ?? "unknown",
+        message: msgText,
+        avatarUrl: normalizeAvatarUrl(item.author?.thumbnails?.[0]?.url),
+        badges: item.author?.badges?.map((b: any) => b?.tooltip ?? b?.label ?? String(b)).filter(Boolean) ?? [],
+        timestamp: item.timestamp ?? Date.now()
+      };
+      void publishChatMessage(chatSourceId, overlayToken, message);
+    });
+
+    livechat.on("end", () => {
+      if (activeChats.get(chatSourceId)?.connectionId !== connectionId) return;
+      console.log(`[chat] YouTube live chat ended: ${target}`);
+      activeChats.delete(chatSourceId);
+      void updateChatSourceStatus(chatSourceId, "DISCONNECTED", overlayToken);
+    });
+
+    livechat.start();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[chat] YouTube connect error: ${msg}`);
+    await updateChatSourceStatus(chatSourceId, "ERROR", overlayToken, msg);
+  }
+}
+
+async function disconnectChat(chatSourceId: string) {
+  const conn = activeChats.get(chatSourceId);
+  if (conn) {
+    activeChats.delete(chatSourceId);
+    try {
+      await conn.disconnect();
+    } catch (e) {
+      // Ignore disconnect errors
+    }
+    console.log(`[chat] Disconnected: ${chatSourceId} (${conn.connectionId})`);
+  }
+}
+
+async function connectChatSource(chatSourceId: string, platform: string, target: string, overlayToken: string) {
+  await disconnectChat(chatSourceId);
+  if (platform === "TIKTOK") {
+    void connectTikTok(chatSourceId, target, overlayToken);
+  } else if (platform === "YOUTUBE") {
+    void connectYouTube(chatSourceId, target, overlayToken);
+  }
+}
+
+async function reconnectStoredChatSources() {
+  const sources = await prisma.chatSource.findMany({
+    where: {
+      isEnabled: true,
+      status: { in: ["CONNECTED", "CONNECTING"] },
+      overlay: { isActive: true }
+    },
+    include: { overlay: { select: { token: true } } },
+    orderBy: { updatedAt: "asc" }
+  });
+
+  if (!sources.length) return;
+  console.log(`[chat] Reconnecting ${sources.length} stored chat source(s)`);
+  for (const source of sources) {
+    await updateChatSourceStatus(source.id, "CONNECTING", source.overlay.token);
+    await connectChatSource(source.id, source.platform, source.target, source.overlay.token);
+  }
+}
+
+// Subscribe to chat commands from API
+const chatCommandSub = connection.duplicate();
+void chatCommandSub.subscribe(CHAT_COMMANDS_CHANNEL).then(() => {
+  chatCommandSub.on("message", (_channel, raw) => {
+    void (async () => {
+      try {
+        const cmd = JSON.parse(raw) as { action: string; chatSourceId: string; platform: string; target: string; overlayToken?: string };
+        if (cmd.action === "connect" && cmd.overlayToken) {
+          await connectChatSource(cmd.chatSourceId, cmd.platform, cmd.target, cmd.overlayToken);
+        } else if (cmd.action === "disconnect") {
+          await disconnectChat(cmd.chatSourceId);
+        }
+      } catch (error) {
+      console.error("[chat] Invalid command", error);
+      }
+    })();
+  });
+  void reconnectStoredChatSources().catch((error) => {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[chat] Reconnect stored sources failed: ${msg}`);
+  });
+});
+
+console.log("[chat] Chat connector manager ready");
+
+// ── BullMQ Workers ────────────────────────────────────────────────────
 
 const workers = [
   new Worker(
@@ -291,6 +890,9 @@ for (const worker of workers) {
 }
 
 async function shutdown() {
+  for (const [id] of activeChats) await disconnectChat(id);
+  await chatCommandSub.quit();
+  await Promise.all([ttsJobsQueue.close(), widgetActionsQueue.close()]);
   await Promise.all(workers.map((worker) => worker.close()));
   await connection.quit();
   await prisma.$disconnect();
