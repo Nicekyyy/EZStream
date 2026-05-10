@@ -146,7 +146,7 @@ async function main() {
     width: 1,
     height: 1,
     zIndex: 1,
-    config: { voice: "default", speed: 1, pitch: 1, volume: 1 },
+    config: { voice: "th-TH-Neural2-C", speed: 1, pitch: 1, volume: 1 },
     state: { speaking: false, queueLength: 0 }
   });
 

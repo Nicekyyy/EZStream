@@ -1,12 +1,23 @@
-import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
-import { IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
+import { BadRequestException, Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
+import { WidgetType } from "@prisma/client";
+import { IsNumber, IsOptional, IsString, Max, MaxLength, Min, IsNotEmpty } from "class-validator";
 import { CurrentUser, type AuthUser } from "../common/current-user.decorator.js";
 import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { QueuesService } from "../queues/queues.service.js";
+
+const defaultGoogleTtsVoice = process.env.GOOGLE_TTS_VOICE ?? "th-TH-Neural2-C";
 
 class TestTtsDto {
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
   text!: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  widgetId?: string;
 
   @IsOptional()
   @IsString()
@@ -17,28 +28,69 @@ class TestTtsDto {
   @Min(0.5)
   @Max(2)
   speed?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  pitch?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  volume?: number;
 }
 
 @Controller("tts")
 @UseGuards(JwtAuthGuard)
 export class TtsController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(QueuesService) private readonly queues: QueuesService
+  ) {}
 
   @Get("jobs")
   jobs(@CurrentUser() user: AuthUser) {
-    return this.prisma.ttsJob.findMany({ where: { creatorId: user.creatorId! }, orderBy: { createdAt: "desc" }, take: 100 });
+    return this.prisma.ttsJob.findMany({
+      where: { creatorId: user.creatorId! },
+      include: { widget: { select: { id: true, name: true, overlay: { select: { id: true, name: true, token: true } } } } },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    });
   }
 
   @Post("test")
-  test(@CurrentUser() user: AuthUser, @Body() dto: TestTtsDto) {
-    return this.prisma.ttsJob.create({
+  async test(@CurrentUser() user: AuthUser, @Body() dto: TestTtsDto) {
+    const creatorId = user.creatorId!;
+    const widget = dto.widgetId
+      ? await this.prisma.widget.findFirst({ where: { id: dto.widgetId, creatorId, type: WidgetType.TTS_WIDGET, isEnabled: true }, include: { overlay: true } })
+      : await this.prisma.widget.findFirst({ where: { creatorId, type: WidgetType.TTS_WIDGET, isEnabled: true }, include: { overlay: true }, orderBy: { createdAt: "asc" } });
+
+    if (!widget) {
+      throw new BadRequestException("Create or select an enabled TTS widget before testing TTS");
+    }
+
+    const text = dto.text.trim();
+    if (!text) {
+      throw new BadRequestException("TTS text is required");
+    }
+
+    const job = await this.prisma.ttsJob.create({
       data: {
-        creatorId: user.creatorId!,
-        text: dto.text,
-        voice: dto.voice ?? "default",
+        creatorId,
+        widgetId: widget.id,
+        text,
+        voice: dto.voice ?? defaultGoogleTtsVoice,
         speed: dto.speed ?? 1,
-        payload: { type: "tts.speak", text: dto.text, voice: dto.voice ?? "default", speed: dto.speed ?? 1, pitch: 1, volume: 1 }
-      }
+        pitch: dto.pitch ?? 1,
+        volume: dto.volume ?? 1,
+        payload: { type: "tts.audio", ttsJobId: "", text, voice: dto.voice ?? defaultGoogleTtsVoice, speed: dto.speed ?? 1, pitch: dto.pitch ?? 1, volume: dto.volume ?? 1 }
+      },
+      include: { widget: { select: { id: true, name: true, overlay: { select: { id: true, name: true, token: true } } } } }
     });
+
+    await this.queues.ttsJobs.add("tts.speak", { ttsJobId: job.id });
+    return job;
   }
 }

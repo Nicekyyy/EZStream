@@ -5,6 +5,8 @@ import { QueuesService } from "../queues/queues.service.js";
 import type { Redis } from "ioredis";
 import { REDIS } from "../redis/redis.module.js";
 
+const defaultGoogleTtsVoice = process.env.GOOGLE_TTS_VOICE ?? "th-TH-Neural2-C";
+
 type Condition = {
   field: string;
   operator: string;
@@ -164,9 +166,9 @@ export class RuleEngineService {
         ruleId,
         text,
         payload: {
-          type: "tts.speak",
+          type: "tts.audio",
           text,
-          voice: "default",
+          voice: defaultGoogleTtsVoice,
           speed: 1,
           pitch: 1,
           volume: 1
