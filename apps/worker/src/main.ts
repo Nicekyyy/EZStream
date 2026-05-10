@@ -723,11 +723,12 @@ async function connectYouTube(chatSourceId: string, target: string, overlayToken
       const videos = liveTab?.videos || [];
       
       // Find the first video that is currently live
-      const liveVideo = videos.find((v: any) => v.is_live);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const liveVideo = (videos as any[]).find((v) => v.is_live);
       if (liveVideo?.id) {
         liveVideoId = liveVideo.id;
-      } else if (videos.length > 0 && videos[0]?.id) {
-        liveVideoId = videos[0].id;
+      } else if (videos.length > 0 && (videos[0] as any)?.id) {
+        liveVideoId = (videos[0] as any).id;
       }
     }
 
