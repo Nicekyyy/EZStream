@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "dotenv -e ../../.env -- tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "dotenv -e ../../.env -- node dist/main.js",
+    "start": "node dist/apps/api/src/main.js",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
