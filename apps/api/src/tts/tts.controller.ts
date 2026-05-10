@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
+import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName } from "@ezstream/shared";
 import { WidgetType } from "@prisma/client";
 import { IsNumber, IsOptional, IsString, Max, MaxLength, Min, IsNotEmpty } from "class-validator";
 import { CurrentUser, type AuthUser } from "../common/current-user.decorator.js";
@@ -6,7 +7,7 @@ import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { QueuesService } from "../queues/queues.service.js";
 
-const defaultGoogleTtsVoice = process.env.GOOGLE_TTS_VOICE ?? "th-TH-Neural2-C";
+const defaultGoogleTtsVoice = resolveGoogleTtsVoiceName(process.env.GOOGLE_TTS_VOICE, defaultGoogleTtsVoiceName);
 
 class TestTtsDto {
   @IsString()
@@ -40,6 +41,10 @@ class TestTtsDto {
   @Min(0)
   @Max(1)
   volume?: number;
+}
+
+function jsonObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 @Controller("tts")
@@ -76,16 +81,22 @@ export class TtsController {
       throw new BadRequestException("TTS text is required");
     }
 
+    const widgetConfig = jsonObject(widget.config);
+    const voice = resolveGoogleTtsVoiceName(dto.voice ?? widgetConfig.voice, defaultGoogleTtsVoice);
+    const speed = dto.speed ?? (typeof widgetConfig.speed === "number" ? widgetConfig.speed : 1);
+    const pitch = dto.pitch ?? (typeof widgetConfig.pitch === "number" ? widgetConfig.pitch : 1);
+    const volume = dto.volume ?? (typeof widgetConfig.volume === "number" ? widgetConfig.volume : 1);
+
     const job = await this.prisma.ttsJob.create({
       data: {
         creatorId,
         widgetId: widget.id,
         text,
-        voice: dto.voice ?? defaultGoogleTtsVoice,
-        speed: dto.speed ?? 1,
-        pitch: dto.pitch ?? 1,
-        volume: dto.volume ?? 1,
-        payload: { type: "tts.audio", ttsJobId: "", text, voice: dto.voice ?? defaultGoogleTtsVoice, speed: dto.speed ?? 1, pitch: dto.pitch ?? 1, volume: dto.volume ?? 1 }
+        voice,
+        speed,
+        pitch,
+        volume,
+        payload: { type: "tts.audio", ttsJobId: "", text, voice, speed, pitch, volume }
       },
       include: { widget: { select: { id: true, name: true, overlay: { select: { id: true, name: true, token: true } } } } }
     });

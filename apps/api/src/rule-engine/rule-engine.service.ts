@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName } from "@ezstream/shared";
 import type { Prisma, Rule } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { QueuesService } from "../queues/queues.service.js";
 import type { Redis } from "ioredis";
 import { REDIS } from "../redis/redis.module.js";
 
-const defaultGoogleTtsVoice = process.env.GOOGLE_TTS_VOICE ?? "th-TH-Neural2-C";
+const defaultGoogleTtsVoice = resolveGoogleTtsVoiceName(process.env.GOOGLE_TTS_VOICE, defaultGoogleTtsVoiceName);
 
 type Condition = {
   field: string;
@@ -75,6 +76,10 @@ function renderTemplate(template: string, payload: Record<string, unknown>) {
 
 function jsonArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function jsonObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 @Injectable()
@@ -158,6 +163,12 @@ export class RuleEngineService {
 
   private async createTtsJob(creatorId: string, eventLogId: string, ruleId: string, action: RuleAction, payload: Record<string, unknown>) {
     const text = renderTemplate(action.textTemplate ?? "{username} said {message}", payload);
+    const widget = action.widgetId ? await this.prisma.widget.findFirst({ where: { id: action.widgetId, creatorId }, select: { config: true } }) : null;
+    const widgetConfig = jsonObject(widget?.config);
+    const voice = resolveGoogleTtsVoiceName(action.voice ?? widgetConfig.voice, defaultGoogleTtsVoice);
+    const speed = typeof widgetConfig.speed === "number" ? widgetConfig.speed : 1;
+    const pitch = typeof widgetConfig.pitch === "number" ? widgetConfig.pitch : 1;
+    const volume = typeof widgetConfig.volume === "number" ? widgetConfig.volume : 1;
     const job = await this.prisma.ttsJob.create({
       data: {
         creatorId,
@@ -165,13 +176,17 @@ export class RuleEngineService {
         eventLogId,
         ruleId,
         text,
+        voice,
+        speed,
+        pitch,
+        volume,
         payload: {
           type: "tts.audio",
           text,
-          voice: defaultGoogleTtsVoice,
-          speed: 1,
-          pitch: 1,
-          volume: 1
+          voice,
+          speed,
+          pitch,
+          volume
         }
       }
     });

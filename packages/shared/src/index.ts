@@ -42,3 +42,29 @@ export const ruleActionTypes = [
 ] as const;
 
 export type RuleActionType = (typeof ruleActionTypes)[number];
+
+export const googleTtsVoices = [
+  { name: "th-TH-Neural2-C", label: "Thai female - Neural2 C", languageCode: "th-TH", gender: "FEMALE" },
+  { name: "th-TH-Standard-A", label: "Thai female - Standard A", languageCode: "th-TH", gender: "FEMALE" },
+  { name: "en-US-Neural2-F", label: "English female - Neural2 F", languageCode: "en-US", gender: "FEMALE" },
+  { name: "en-US-Neural2-J", label: "English male - Neural2 J", languageCode: "en-US", gender: "MALE" },
+  { name: "en-US-Studio-O", label: "English female - Studio O", languageCode: "en-US", gender: "FEMALE" }
+] as const;
+
+export type GoogleTtsVoiceName = (typeof googleTtsVoices)[number]["name"];
+
+export const defaultGoogleTtsVoiceName: GoogleTtsVoiceName = "th-TH-Neural2-C";
+
+export function isGoogleTtsVoiceName(value: unknown): value is GoogleTtsVoiceName {
+  return typeof value === "string" && googleTtsVoices.some((voice) => voice.name === value);
+}
+
+export function resolveGoogleTtsVoiceName(value: unknown, fallback: string = defaultGoogleTtsVoiceName) {
+  if (isGoogleTtsVoiceName(value)) return value;
+  if (isGoogleTtsVoiceName(fallback)) return fallback;
+  return defaultGoogleTtsVoiceName;
+}
+
+export function googleTtsVoiceLanguageCode(voiceName: string) {
+  return googleTtsVoices.find((voice) => voice.name === voiceName)?.languageCode ?? "th-TH";
+}

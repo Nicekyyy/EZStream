@@ -1,3 +1,4 @@
+import { defaultGoogleTtsVoiceName, googleTtsVoiceLanguageCode, resolveGoogleTtsVoiceName } from "@ezstream/shared";
 import { Prisma, PrismaClient, TtsJobStatus, WidgetActionStatus } from "@prisma/client";
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -9,8 +10,7 @@ const redisUrl = process.env.REDIS_URL ?? "redis://localhost:56379";
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 5);
 const storageRoot = resolve(process.env.LOCAL_STORAGE_ROOT ?? "./storage");
 const apiPublicUrl = (process.env.API_PUBLIC_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`).replace(/\/$/, "");
-const googleTtsLanguageCode = process.env.GOOGLE_TTS_LANGUAGE_CODE ?? "th-TH";
-const googleTtsVoice = process.env.GOOGLE_TTS_VOICE ?? "th-TH-Neural2-C";
+const googleTtsVoice = resolveGoogleTtsVoiceName(process.env.GOOGLE_TTS_VOICE, defaultGoogleTtsVoiceName);
 const googleTtsEndpoint = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const prisma = new PrismaClient();
 const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
@@ -89,12 +89,13 @@ async function googleAuthToken() {
 }
 
 function googleVoiceName(voice: string) {
-  return voice === "default" || voice === "female" ? googleTtsVoice : voice;
+  return voice === "default" || voice === "female" ? googleTtsVoice : resolveGoogleTtsVoiceName(voice, googleTtsVoice);
 }
 
 async function synthesizeGoogleTts(job: { id: string; text: string; voice: string; speed: number; pitch: number }) {
   const token = await googleAuthToken();
   const voiceName = googleVoiceName(job.voice);
+  const languageCode = googleTtsVoiceLanguageCode(voiceName);
   const response = await fetch(googleTtsEndpoint, {
     method: "POST",
     headers: {
@@ -103,7 +104,7 @@ async function synthesizeGoogleTts(job: { id: string; text: string; voice: strin
     },
     body: JSON.stringify({
       input: { text: job.text },
-      voice: { languageCode: googleTtsLanguageCode, name: voiceName, ssmlGender: "FEMALE" },
+      voice: { languageCode, name: voiceName },
       audioConfig: {
         audioEncoding: "MP3",
         speakingRate: job.speed,

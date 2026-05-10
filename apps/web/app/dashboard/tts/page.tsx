@@ -1,15 +1,18 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { defaultGoogleTtsVoiceName, googleTtsVoices, resolveGoogleTtsVoiceName } from "@ezstream/shared";
+import type { GoogleTtsVoiceName } from "@ezstream/shared";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
 import { API_URL, api } from "../../../lib/api";
 
 type Overlay = { id: string; name: string; token: string };
-type TtsWidget = { id: string; name: string; type: string; overlayId: string; isEnabled: boolean };
+type TtsWidget = { id: string; name: string; type: string; overlayId: string; isEnabled: boolean; config?: unknown };
 type TtsJob = {
   id: string;
   text: string;
+  voice: string;
   status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
   createdAt: string;
   errorMessage?: string | null;
@@ -23,11 +26,16 @@ const statusClass: Record<TtsJob["status"], string> = {
   FAILED: "bg-rose-50 text-rose-700"
 };
 
+function configObject(widget: TtsWidget | undefined) {
+  return widget?.config && typeof widget.config === "object" && !Array.isArray(widget.config) ? (widget.config as Record<string, unknown>) : {};
+}
+
 export default function TtsPage() {
   const [jobs, setJobs] = useState<TtsJob[]>([]);
   const [widgets, setWidgets] = useState<TtsWidget[]>([]);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [widgetId, setWidgetId] = useState("");
+  const [voice, setVoice] = useState<GoogleTtsVoiceName>(defaultGoogleTtsVoiceName);
   const [text, setText] = useState("Hello from dashboard");
   const [speed, setSpeed] = useState(1);
   const [pitch, setPitch] = useState(1);
@@ -35,6 +43,7 @@ export default function TtsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [savingVoice, setSavingVoice] = useState(false);
 
   async function load() {
     const [nextJobs, nextWidgets, nextOverlays] = await Promise.all([
@@ -46,19 +55,29 @@ export default function TtsPage() {
     setJobs(nextJobs);
     setWidgets(ttsWidgets);
     setOverlays(nextOverlays);
-    setWidgetId((current) => current || ttsWidgets[0]?.id || "");
+    const nextWidgetId = widgetId || ttsWidgets[0]?.id || "";
+    const nextWidget = ttsWidgets.find((widget) => widget.id === nextWidgetId) ?? ttsWidgets[0];
+    setWidgetId(nextWidgetId);
+    setVoice(resolveGoogleTtsVoiceName(configObject(nextWidget).voice, defaultGoogleTtsVoiceName));
   }
 
   useEffect(() => {
-    void load().catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลดข้อมูล TTS ไม่สำเร็จ"));
+    void load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load TTS data"));
   }, []);
 
   const selectedWidget = widgets.find((widget) => widget.id === widgetId);
+  const selectedWidgetConfig = configObject(selectedWidget);
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedWidget?.overlayId);
   const overlayUrl = selectedOverlay ? `${API_URL.replace("4000", "3000")}/overlay/${selectedOverlay.token}` : "";
   const previewUrl = selectedOverlay ? `${API_URL.replace("4000", "3000")}/overlay/preview/${selectedOverlay.token}?debug=1` : "";
   const canSubmit = Boolean(text.trim() && widgetId && !submitting);
   const latestJobs = useMemo(() => jobs.slice(0, 20), [jobs]);
+
+  function selectWidget(nextWidgetId: string) {
+    const nextWidget = widgets.find((widget) => widget.id === nextWidgetId);
+    setWidgetId(nextWidgetId);
+    setVoice(resolveGoogleTtsVoiceName(configObject(nextWidget).voice, defaultGoogleTtsVoiceName));
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -69,14 +88,33 @@ export default function TtsPage() {
     try {
       await api<TtsJob>("/tts/test", {
         method: "POST",
-        body: JSON.stringify({ text: text.trim(), widgetId, speed, pitch, volume })
+        body: JSON.stringify({ text: text.trim(), widgetId, voice, speed, pitch, volume })
       });
-      setMessage("ส่ง TTS เข้า queue แล้ว เปิด overlay ไว้เพื่อให้ได้ยินเสียง");
+      setMessage("TTS job queued. Keep the overlay open to hear the audio.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ทดสอบ TTS ไม่สำเร็จ");
+      setError(err instanceof Error ? err.message : "TTS test failed");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function saveVoiceDefault() {
+    if (!selectedWidget) return;
+    setSavingVoice(true);
+    setMessage("");
+    setError("");
+    try {
+      await api<TtsWidget>(`/widgets/${selectedWidget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ config: { ...selectedWidgetConfig, voice, speed, pitch, volume } })
+      });
+      setMessage("Saved this voice as the widget default.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the widget voice");
+    } finally {
+      setSavingVoice(false);
     }
   }
 
@@ -87,12 +125,25 @@ export default function TtsPage() {
           <form onSubmit={submit} className="grid gap-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="tts-widget">TTS Widget</label>
-              <select id="tts-widget" className="w-full rounded-md border px-3 py-2" value={widgetId} onChange={(event) => setWidgetId(event.target.value)}>
-                {widgets.length ? widgets.map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>) : <option value="">ยังไม่มี TTS widget</option>}
+              <select id="tts-widget" className="w-full rounded-md border px-3 py-2" value={widgetId} onChange={(event) => selectWidget(event.target.value)}>
+                {widgets.length ? widgets.map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>) : <option value="">No TTS widget</option>}
               </select>
             </div>
+
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="tts-text">ข้อความทดสอบ</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="tts-voice">Voice</label>
+              <div className="flex flex-wrap gap-2">
+                <select id="tts-voice" className="min-w-0 flex-1 rounded-md border px-3 py-2" value={voice} onChange={(event) => setVoice(resolveGoogleTtsVoiceName(event.target.value, defaultGoogleTtsVoiceName))}>
+                  {googleTtsVoices.map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}
+                </select>
+                <button className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100" type="button" disabled={!selectedWidget || savingVoice} onClick={() => void saveVoiceDefault()}>
+                  {savingVoice ? "Saving..." : "Save default"}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="tts-text">Test text</label>
               <textarea
                 id="tts-text"
                 className="min-h-28 w-full rounded-md border px-3 py-2"
@@ -100,8 +151,9 @@ export default function TtsPage() {
                 value={text}
                 onChange={(event) => setText(event.target.value)}
               />
-              <p className="mt-1 text-xs text-slate-500">{text.length}/300 ตัวอักษร</p>
+              <p className="mt-1 text-xs text-slate-500">{text.length}/300 characters</p>
             </div>
+
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="text-sm text-slate-700">
                 Speed
@@ -119,8 +171,9 @@ export default function TtsPage() {
                 <span className="text-xs text-slate-500">{volume.toFixed(1)}</span>
               </label>
             </div>
+
             <button className="w-fit rounded-md bg-slate-950 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-slate-400" disabled={!canSubmit}>
-              {submitting ? "กำลังส่ง..." : "ทดสอบ TTS"}
+              {submitting ? "Sending..." : "Test TTS"}
             </button>
             {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
             {error ? <p className="text-sm text-rose-700">{error}</p> : null}
@@ -130,30 +183,30 @@ export default function TtsPage() {
         <ResourceCard>
           <div className="space-y-3">
             <div>
-              <p className="text-sm font-medium text-slate-700">Overlay ที่ต้องเปิดใน OBS</p>
-              {overlayUrl ? <p className="break-all text-sm text-slate-600">{overlayUrl}</p> : <p className="text-sm text-slate-500">เลือก TTS widget ก่อน</p>}
+              <p className="text-sm font-medium text-slate-700">Overlay URL for OBS</p>
+              {overlayUrl ? <p className="break-all text-sm text-slate-600">{overlayUrl}</p> : <p className="text-sm text-slate-500">Select a TTS widget first</p>}
             </div>
-            {previewUrl ? <a className="inline-flex rounded-md border px-3 py-2 text-sm" href={previewUrl} target="_blank" rel="noreferrer">เปิด Preview พร้อม debug</a> : null}
-            <p className="text-sm text-slate-600">ระบบจะสร้างเสียงด้วย Google Cloud Text-to-Speech แล้วเล่นจากเครื่องที่เปิด overlay ไม่ใช่จากหน้า dashboard นี้</p>
-            <p className="text-xs text-slate-500">เสียงเริ่มต้น: th-TH-Neural2-C</p>
+            {previewUrl ? <a className="inline-flex rounded-md border px-3 py-2 text-sm" href={previewUrl} target="_blank" rel="noreferrer">Open preview with debug</a> : null}
+            <p className="text-sm text-slate-600">Google Cloud Text-to-Speech generates an MP3, then the overlay machine plays that audio.</p>
+            <p className="text-xs text-slate-500">Current voice: {voice}</p>
           </div>
         </ResourceCard>
       </div>
 
       <section className="mt-4 grid gap-3">
-        <h2 className="text-lg font-semibold">งาน TTS ล่าสุด</h2>
+        <h2 className="text-lg font-semibold">Recent TTS jobs</h2>
         {latestJobs.length ? latestJobs.map((job) => (
           <ResourceCard key={job.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-medium">{job.text}</p>
-                <p className="text-sm text-slate-500">{job.widget?.name ?? "ไม่ระบุ widget"} · {new Date(job.createdAt).toLocaleString()}</p>
+                <p className="text-sm text-slate-500">{job.widget?.name ?? "No widget"} · {job.voice} · {new Date(job.createdAt).toLocaleString()}</p>
                 {job.errorMessage ? <p className="mt-1 text-sm text-rose-700">{job.errorMessage}</p> : null}
               </div>
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusClass[job.status]}`}>{job.status}</span>
             </div>
           </ResourceCard>
-        )) : <ResourceCard><p className="text-sm text-slate-500">ยังไม่มีงาน TTS</p></ResourceCard>}
+        )) : <ResourceCard><p className="text-sm text-slate-500">No TTS jobs yet</p></ResourceCard>}
       </section>
     </DashboardShell>
   );
