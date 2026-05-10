@@ -72,8 +72,8 @@ export default function TtsPage() {
   const selectedWidget = widgets.find((widget) => widget.id === widgetId);
   const selectedWidgetConfig = configObject(selectedWidget);
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedWidget?.overlayId);
-  const overlayUrl = selectedOverlay ? `${API_URL.replace("4000", "3000")}/overlay/${selectedOverlay.token}` : "";
-  const previewUrl = selectedOverlay ? `${API_URL.replace("4000", "3000")}/overlay/preview/${selectedOverlay.token}?debug=1` : "";
+  const overlayUrl = selectedOverlay && typeof window !== "undefined" ? `${window.location.origin}/overlay/${selectedOverlay.token}` : "";
+  const previewUrl = selectedOverlay && typeof window !== "undefined" ? `${window.location.origin}/overlay/preview/${selectedOverlay.token}?debug=1` : "";
   const canSubmit = Boolean(text.trim() && widgetId && !submitting);
   const latestJobs = useMemo(() => jobs.slice(0, 20), [jobs]);
 

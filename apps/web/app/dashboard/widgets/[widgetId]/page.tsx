@@ -51,7 +51,7 @@ export default function WidgetDetailPage() {
 
   const widgetConfig = configObject(widget);
   const showPlatformLogo = widgetConfig.showPlatformLogo !== false;
-  const widgetUrl = widget ? `${API_URL.replace("4000", "3000")}/widget/${widget.id}` : "";
+  const widgetUrl = widget && typeof window !== "undefined" ? `${window.location.origin}/widget/${widget.id}` : "";
 
   function syncDraft(nextWidget: Widget) {
     setWidget(nextWidget);

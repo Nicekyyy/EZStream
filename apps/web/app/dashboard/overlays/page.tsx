@@ -66,7 +66,7 @@ export default function OverlaysPage() {
   }
 
   async function copyUrl(overlay: Overlay) {
-    const url = `${API_URL.replace("4000", "3000")}/overlay/${overlay.token}`;
+    const url = `${window.location.origin}/overlay/${overlay.token}`;
     const copied = await copyText(url);
     if (copied) {
       setError("");
@@ -97,7 +97,7 @@ export default function OverlaysPage() {
                   </span>
                 </div>
                 <p className="text-sm text-slate-400">{overlay.width}x{overlay.height}</p>
-                <p className="break-all text-sm text-slate-400">{API_URL.replace("4000", "3000")}/overlay/{overlay.token}</p>
+                <p className="break-all text-sm text-slate-400">{typeof window !== "undefined" ? window.location.origin : ""}/overlay/{overlay.token}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button className="rounded-md border border-slate-800 px-3 py-2 text-sm" disabled={busyId === overlay.id} onClick={() => void toggleActive(overlay)} type="button">

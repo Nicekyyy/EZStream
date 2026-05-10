@@ -77,7 +77,7 @@ export default function WidgetsPage() {
   }
 
   async function copyWidgetUrl(widget: Widget) {
-    const url = `${API_URL.replace("4000", "3000")}/widget/${widget.id}`;
+    const url = `${window.location.origin}/widget/${widget.id}`;
     const copied = await copyText(url);
     if (copied) {
       setError("");

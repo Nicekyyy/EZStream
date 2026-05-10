@@ -133,7 +133,7 @@ export default function OverlayDetailPage() {
     }
   }
 
-  const url = overlay ? `${API_URL.replace("4000", "3000")}/overlay/${overlay.token}` : "";
+  const url = overlay && typeof window !== "undefined" ? `${window.location.origin}/overlay/${overlay.token}` : "";
 
   return (
     <DashboardShell title="จัดการ Overlay">
