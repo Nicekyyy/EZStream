@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
-import { API_URL, api } from "../../../../lib/api";
+import { API_URL, APP_URL, api } from "../../../../lib/api";
 import { copyText } from "../../../../lib/clipboard";
 
 type Overlay = { id: string; name: string };
@@ -51,7 +51,7 @@ export default function WidgetDetailPage() {
 
   const widgetConfig = configObject(widget);
   const showPlatformLogo = widgetConfig.showPlatformLogo !== false;
-  const widgetUrl = widget && typeof window !== "undefined" ? `${window.location.origin}/widget/${widget.id}` : "";
+  const widgetUrl = widget && APP_URL ? `${APP_URL}/widget/${widget.id}` : "";
 
   function syncDraft(nextWidget: Widget) {
     setWidget(nextWidget);

@@ -5,7 +5,7 @@ import { defaultGoogleTtsVoiceName, googleTtsVoices, resolveGoogleTtsVoiceName }
 import type { GoogleTtsVoiceName } from "@ezstream/shared";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
-import { API_URL, api } from "../../../lib/api";
+import { API_URL, APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
 
 type Overlay = { id: string; name: string; token: string };
@@ -72,8 +72,8 @@ export default function TtsPage() {
   const selectedWidget = widgets.find((widget) => widget.id === widgetId);
   const selectedWidgetConfig = configObject(selectedWidget);
   const selectedOverlay = overlays.find((overlay) => overlay.id === selectedWidget?.overlayId);
-  const overlayUrl = selectedOverlay && typeof window !== "undefined" ? `${window.location.origin}/overlay/${selectedOverlay.token}` : "";
-  const previewUrl = selectedOverlay && typeof window !== "undefined" ? `${window.location.origin}/overlay/preview/${selectedOverlay.token}?debug=1` : "";
+  const overlayUrl = selectedOverlay && APP_URL ? `${APP_URL}/overlay/${selectedOverlay.token}` : "";
+  const previewUrl = selectedOverlay && APP_URL ? `${APP_URL}/overlay/preview/${selectedOverlay.token}?debug=1` : "";
   const canSubmit = Boolean(text.trim() && widgetId && !submitting);
   const latestJobs = useMemo(() => jobs.slice(0, 20), [jobs]);
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
-import { API_URL, api } from "../../../lib/api";
+import { API_URL, APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
 
 type Widget = {
@@ -77,7 +77,7 @@ export default function WidgetsPage() {
   }
 
   async function copyWidgetUrl(widget: Widget) {
-    const url = `${window.location.origin}/widget/${widget.id}`;
+    const url = `${APP_URL}/widget/${widget.id}`;
     const copied = await copyText(url);
     if (copied) {
       setError("");

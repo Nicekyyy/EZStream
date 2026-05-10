@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
-import { API_URL, api } from "../../../../lib/api";
+import { API_URL, APP_URL, api } from "../../../../lib/api";
 import { copyText } from "../../../../lib/clipboard";
 
 type Overlay = {
@@ -133,7 +133,7 @@ export default function OverlayDetailPage() {
     }
   }
 
-  const url = overlay && typeof window !== "undefined" ? `${window.location.origin}/overlay/${overlay.token}` : "";
+  const url = overlay && APP_URL ? `${APP_URL}/overlay/${overlay.token}` : "";
 
   return (
     <DashboardShell title="จัดการ Overlay">

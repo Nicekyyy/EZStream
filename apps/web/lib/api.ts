@@ -1,6 +1,7 @@
 "use client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
 export function getToken() {
   if (typeof window === "undefined") return null;
@@ -31,4 +32,4 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
-export { API_URL };
+export { API_URL, APP_URL };

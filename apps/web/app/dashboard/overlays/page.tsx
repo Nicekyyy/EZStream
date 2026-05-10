@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
-import { API_URL, api } from "../../../lib/api";
+import { API_URL, APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
 
 type Overlay = { id: string; name: string; token: string; width: number; height: number; isActive: boolean };
@@ -66,7 +66,7 @@ export default function OverlaysPage() {
   }
 
   async function copyUrl(overlay: Overlay) {
-    const url = `${window.location.origin}/overlay/${overlay.token}`;
+    const url = `${APP_URL}/overlay/${overlay.token}`;
     const copied = await copyText(url);
     if (copied) {
       setError("");
@@ -97,7 +97,7 @@ export default function OverlaysPage() {
                   </span>
                 </div>
                 <p className="text-sm text-slate-400">{overlay.width}x{overlay.height}</p>
-                <p className="break-all text-sm text-slate-400">{typeof window !== "undefined" ? window.location.origin : ""}/overlay/{overlay.token}</p>
+                <p className="break-all text-sm text-slate-400">{APP_URL}/overlay/{overlay.token}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button className="rounded-md border border-slate-800 px-3 py-2 text-sm" disabled={busyId === overlay.id} onClick={() => void toggleActive(overlay)} type="button">
