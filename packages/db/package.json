@@ -10,7 +10,7 @@
   },
   "scripts": {
     "db:generate": "prisma generate",
-    "db:migrate": "prisma db push",
+    "db:migrate": "prisma db push --accept-data-loss",
     "db:seed": "tsx prisma/seed.ts",
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit",
