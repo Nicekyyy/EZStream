@@ -10,7 +10,7 @@ import { HttpErrorFilter } from "./common/http-error.filter.js";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
-  const port = config.get<number>("API_PORT", 4000);
+  const port = Number(process.env.PORT) || config.get<number>("API_PORT", 4000);
 
   app.enableCors({
     origin: config.get<string>("API_CORS_ORIGIN", "http://localhost:3000"),
