@@ -11,33 +11,38 @@ export class PublicWidgetController {
       where: { id },
       include: { overlay: true, state: true }
     });
-    if (!widget || !widget.isEnabled || !widget.overlay.isActive) {
+    if (!widget || !widget.isEnabled || (widget.overlay && !widget.overlay.isActive)) {
       throw new NotFoundException("Widget not found");
     }
 
-    const recentEvents = await this.prisma.eventLog.findMany({
-      where: {
-        creatorId: widget.creatorId,
-        eventType: "live.chat.message"
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100
-    });
-    const chatMessages = recentEvents
-      .map((event) => this.chatMessageFromEvent(event.id, event.createdAt, event.payload))
-      .filter((message): message is NonNullable<typeof message> => Boolean(message))
-      .filter((message) => message.overlayId === widget.overlayId || message.overlayToken === widget.overlay.token)
-      .slice(0, 50)
-      .reverse();
+    const chatMessages = widget.overlay
+      ? (
+          await this.prisma.eventLog.findMany({
+            where: {
+              creatorId: widget.creatorId,
+              eventType: "live.chat.message"
+            },
+            orderBy: { createdAt: "desc" },
+            take: 100
+          })
+        )
+          .map((event) => this.chatMessageFromEvent(event.id, event.createdAt, event.payload))
+          .filter((message): message is NonNullable<typeof message> => Boolean(message))
+          .filter((message) => message.overlayId === widget.overlayId || message.overlayToken === widget.overlay?.token)
+          .slice(0, 50)
+          .reverse()
+      : [];
 
     return {
-      overlay: {
-        id: widget.overlay.id,
-        name: widget.overlay.name,
-        token: widget.overlay.token,
-        width: widget.overlay.width,
-        height: widget.overlay.height
-      },
+      overlay: widget.overlay
+        ? {
+            id: widget.overlay.id,
+            name: widget.overlay.name,
+            token: widget.overlay.token,
+            width: widget.overlay.width,
+            height: widget.overlay.height
+          }
+        : null,
       widget: {
         id: widget.id,
         name: widget.name,

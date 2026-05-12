@@ -6,7 +6,7 @@ import { QueuesService } from "../queues/queues.service.js";
 import { REDIS } from "../redis/redis.module.js";
 
 type WidgetInput = {
-  overlayId: string;
+  overlayId?: string | null;
   type: WidgetType;
   name: string;
   positionX?: number;
@@ -27,14 +27,18 @@ export class WidgetsService {
     @Inject(QueuesService) private readonly queues: QueuesService
   ) {}
 
-  private async publishWidgetUpdate(overlayId: string, widgetId: string) {
+  private async publishWidgetUpdate(overlayId: string | null | undefined, widgetId: string) {
+    await this.redis.publish(
+      "ezstream:realtime",
+      JSON.stringify({ room: `widget:${widgetId}`, event: "widget.updated", payload: { widgetId } })
+    );
+    if (!overlayId) return;
     const overlay = await this.prisma.overlay.findUnique({ where: { id: overlayId } });
-    if (overlay) {
-      await this.redis.publish(
-        "ezstream:realtime",
-        JSON.stringify({ room: `overlay-token:${overlay.token}`, event: "widget.updated", payload: { widgetId } })
-      );
-    }
+    if (!overlay) return;
+    await this.redis.publish(
+      "ezstream:realtime",
+      JSON.stringify({ room: `overlay-token:${overlay.token}`, event: "widget.updated", payload: { widgetId } })
+    );
   }
 
   list(creatorId: string) {
@@ -46,16 +50,18 @@ export class WidgetsService {
   }
 
   async create(creatorId: string, data: WidgetInput) {
-    if (!data.overlayId || !data.type || !data.name) {
-      throw new BadRequestException("overlayId, type and name are required");
+    if (!data.type || !data.name) {
+      throw new BadRequestException("type and name are required");
     }
-    const overlay = await this.prisma.overlay.findUnique({ where: { id: data.overlayId } });
-    if (!overlay || overlay.creatorId !== creatorId) throw new ForbiddenException("Invalid overlay");
+    if (data.overlayId) {
+      const overlay = await this.prisma.overlay.findUnique({ where: { id: data.overlayId } });
+      if (!overlay || overlay.creatorId !== creatorId) throw new ForbiddenException("Invalid overlay");
+    }
 
     const created = await this.prisma.widget.create({
       data: {
         creatorId,
-        overlayId: data.overlayId,
+        overlayId: data.overlayId ?? null,
         type: data.type,
         name: data.name,
         positionX: data.positionX ?? 0,
@@ -85,7 +91,7 @@ export class WidgetsService {
   }
 
   async update(id: string, creatorId: string, data: Partial<WidgetInput>) {
-    await this.getOwned(id, creatorId);
+    const current = await this.getOwned(id, creatorId);
     if (data.overlayId) {
       const overlay = await this.prisma.overlay.findUnique({ where: { id: data.overlayId } });
       if (!overlay || overlay.creatorId !== creatorId) throw new ForbiddenException("Invalid overlay");
@@ -95,6 +101,9 @@ export class WidgetsService {
       data,
       include: { state: true, overlay: { select: { id: true, name: true } } }
     });
+    if (current.overlayId && current.overlayId !== updated.overlayId) {
+      await this.publishWidgetUpdate(current.overlayId, updated.id);
+    }
     await this.publishWidgetUpdate(updated.overlayId, updated.id);
     return updated;
   }
@@ -102,7 +111,7 @@ export class WidgetsService {
   async remove(id: string, creatorId: string) {
     const widget = await this.getOwned(id, creatorId);
     await this.prisma.widget.delete({ where: { id } });
-    await this.publishWidgetUpdate(widget.overlay.id, id);
+    await this.publishWidgetUpdate(widget.overlayId, id);
     return { deleted: true };
   }
 
@@ -119,7 +128,12 @@ export class WidgetsService {
 
     await this.queues.widgetActions.add("widget.action", { widgetActionId: widgetAction.id });
     
-    const overlay = await this.prisma.overlay.findUnique({ where: { id: widget.overlayId } });
+    await this.redis.publish(
+      "ezstream:realtime",
+      JSON.stringify({ room: `widget:${widget.id}`, event: "widget.triggered", payload: { widgetActionId: widgetAction.id, actionType: "TRIGGER_WIDGET", payload: widgetAction.payload } })
+    );
+
+    const overlay = widget.overlayId ? await this.prisma.overlay.findUnique({ where: { id: widget.overlayId } }) : null;
     if (overlay) {
       await this.redis.publish(
         "ezstream:realtime",

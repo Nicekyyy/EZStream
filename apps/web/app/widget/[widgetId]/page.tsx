@@ -8,7 +8,7 @@ import { WidgetRenderer, type OverlayWidget } from "../../../components/widget-r
 import { API_URL } from "../../../lib/api";
 
 type WidgetState = {
-  overlay: { id: string; name: string; token: string; width: number; height: number };
+  overlay: { id: string; name: string; token: string; width: number; height: number } | null;
   widget: OverlayWidget;
   chatMessages?: UnifiedChatMessage[];
 };
@@ -60,6 +60,7 @@ export default function SingleWidgetPage() {
   const [debug, setDebug] = useState(false);
   const [chatMessages, setChatMessages] = useState<UnifiedChatMessage[]>([]);
   const ttsQueue = useRef<TtsPayload[]>([]);
+  const spokenTtsJobs = useRef<Set<string>>(new Set());
   const isSpeaking = useRef(false);
   const currentAudio = useRef<HTMLAudioElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -111,6 +112,10 @@ export default function SingleWidgetPage() {
   function enqueueTts(payload: unknown) {
     const next = parseTtsPayload(payload);
     if (!next || (next.widgetId && next.widgetId !== widgetId)) return;
+    if (next.ttsJobId) {
+      if (spokenTtsJobs.current.has(next.ttsJobId)) return;
+      spokenTtsJobs.current.add(next.ttsJobId);
+    }
     ttsQueue.current.push(next);
     speakNext();
   }
@@ -136,7 +141,7 @@ export default function SingleWidgetPage() {
       const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
       socketRef.current = socket;
       
-      const joinRoom = () => socket.emit("overlay.join", { token: nextState.overlay.token, widgetId });
+      const joinRoom = () => socket.emit("overlay.join", nextState.overlay?.token ? { token: nextState.overlay.token, widgetId } : { widgetId });
       if (socket.connected) joinRoom();
       socket.on("connect", joinRoom);
       
@@ -160,6 +165,7 @@ export default function SingleWidgetPage() {
       socketRef.current?.close();
       socketRef.current = null;
       ttsQueue.current = [];
+      spokenTtsJobs.current.clear();
       isSpeaking.current = false;
       currentAudio.current?.pause();
       currentAudio.current = null;

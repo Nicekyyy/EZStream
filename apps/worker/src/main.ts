@@ -1,4 +1,4 @@
-import { defaultGoogleTtsVoiceName, googleTtsVoiceLanguageCode, resolveGoogleTtsVoiceName, CHAT_COMMANDS_CHANNEL, REALTIME_CHANNEL } from "@ezstream/shared";
+import { defaultGoogleTtsVoiceName, googleTtsVoiceLanguageCode, resolveGoogleTtsVoiceName, sanitizeTtsText, CHAT_COMMANDS_CHANNEL, REALTIME_CHANNEL } from "@ezstream/shared";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 import { Prisma, PrismaClient, TtsJobStatus, WidgetActionStatus, type Rule } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
@@ -243,14 +243,25 @@ async function processWidgetAction(widgetActionId: string) {
   });
 
   const eventName = action.actionType === "UPDATE_GOAL" ? "goal.updated" : action.actionType === "APPEND_EVENT_LIST" ? "event.list.appended" : "widget.completed";
+  const eventPayload = { widgetActionId, widgetId: action.widgetId, actionType: action.actionType, state: nextState };
   await connection.publish(
     "ezstream:realtime",
     JSON.stringify({
-      room: `overlay-token:${completed.widget.overlay.token}`,
+      room: `widget:${completed.widget.id}`,
       event: eventName,
-      payload: { widgetActionId, widgetId: action.widgetId, actionType: action.actionType, state: nextState }
+      payload: eventPayload
     })
   );
+  if (completed.widget.overlay) {
+    await connection.publish(
+      "ezstream:realtime",
+      JSON.stringify({
+        room: `overlay-token:${completed.widget.overlay.token}`,
+        event: eventName,
+        payload: eventPayload
+      })
+    );
+  }
 
   return completed;
 }
@@ -270,16 +281,26 @@ async function processTtsJob(ttsJobId: string) {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
-  const text = sanitizeText(job.text, bannedWords);
+  const text = sanitizeText(sanitizeTtsText(job.text), bannedWords);
   lastTtsByCreator.set(job.creatorId, Date.now());
-
-  if (!job.widget || !job.widget.overlay || !job.widget.isEnabled || !job.widget.overlay.isActive) {
+  if (!text) {
     return prisma.ttsJob.update({
       where: { id: ttsJobId },
       data: {
         status: TtsJobStatus.FAILED,
         text,
-        errorMessage: "TTS widget or overlay is not available"
+        errorMessage: "TTS text has no readable content"
+      }
+    });
+  }
+
+  if (!job.widget || !job.widget.isEnabled || (job.widget.overlay && !job.widget.overlay.isActive)) {
+    return prisma.ttsJob.update({
+      where: { id: ttsJobId },
+      data: {
+        status: TtsJobStatus.FAILED,
+        text,
+        errorMessage: "TTS widget is not available"
       }
     });
   }
@@ -301,7 +322,7 @@ async function processTtsJob(ttsJobId: string) {
   await connection.publish(
     "ezstream:realtime",
     JSON.stringify({
-      room: `overlay-token:${job.widget.overlay.token}`,
+      room: `widget:${job.widget.id}`,
       event: "tts.speak",
       payload: { ...payload, widgetId: job.widgetId }
     })
@@ -309,11 +330,29 @@ async function processTtsJob(ttsJobId: string) {
   await connection.publish(
     "ezstream:realtime",
     JSON.stringify({
-      room: `overlay-token:${job.widget.overlay.token}`,
+      room: `widget:${job.widget.id}`,
       event: "tts.completed",
       payload: { ttsJobId, widgetId: job.widgetId, text }
     })
   );
+  if (job.widget.overlay) {
+    await connection.publish(
+      "ezstream:realtime",
+      JSON.stringify({
+        room: `overlay-token:${job.widget.overlay.token}`,
+        event: "tts.speak",
+        payload: { ...payload, widgetId: job.widgetId }
+      })
+    );
+    await connection.publish(
+      "ezstream:realtime",
+      JSON.stringify({
+        room: `overlay-token:${job.widget.overlay.token}`,
+        event: "tts.completed",
+        payload: { ttsJobId, widgetId: job.widgetId, text }
+      })
+    );
+  }
 
   const completed = await prisma.ttsJob.update({
     where: { id: ttsJobId },
@@ -328,7 +367,7 @@ async function processTtsJob(ttsJobId: string) {
   return completed;
 }
 
-// ── Chat Connector Manager ────────────────────────────────────────────
+// โ”€โ”€ Chat Connector Manager โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
 function ruleMatches(rule: Rule, payload: Record<string, unknown>) {
   const conditions = jsonArray<Condition>(rule.conditions);
@@ -341,6 +380,15 @@ async function publishWidget(widgetId: string, event: string, payload: unknown) 
   await connection.publish(
     REALTIME_CHANNEL,
     JSON.stringify({
+      room: `widget:${widget.id}`,
+      event,
+      payload
+    })
+  );
+  if (!widget.overlay) return;
+  await connection.publish(
+    REALTIME_CHANNEL,
+    JSON.stringify({
       room: `overlay-token:${widget.overlay.token}`,
       event,
       payload
@@ -349,7 +397,8 @@ async function publishWidget(widgetId: string, event: string, payload: unknown) 
 }
 
 async function createTtsJobFromRule(creatorId: string, eventLogId: string, ruleId: string | undefined, action: RuleAction, payload: Record<string, unknown>) {
-  const text = renderTemplate(action.textTemplate ?? "{username} said {message}", payload);
+  const text = sanitizeTtsText(renderTemplate(action.textTemplate ?? "{username} said {message}", payload));
+  if (!text) return;
   const widget = action.widgetId
     ? await prisma.widget.findFirst({ where: { id: action.widgetId, creatorId }, select: { config: true } })
     : null;
@@ -547,8 +596,14 @@ function normalizeAvatarUrl(url: unknown) {
 
 function firstImageUrl(image: unknown) {
   if (!image || typeof image !== "object") return undefined;
-  const value = image as { url?: unknown; urls?: unknown; mUrls?: unknown };
-  const candidates = [value.url, value.urls, value.mUrls];
+  const value = image as { url?: unknown; urls?: unknown; mUrls?: unknown; urlList?: unknown; imageUrl?: unknown; thumbnails?: unknown };
+  // Check thumbnails array first (YouTube emoji format: { thumbnails: [{url, width, height}] })
+  if (Array.isArray(value.thumbnails)) {
+    const sorted = [...value.thumbnails].sort((a: any, b: any) => Number(b?.width ?? 0) - Number(a?.width ?? 0));
+    const url = normalizeAvatarUrl(sorted[0]?.url);
+    if (url) return url;
+  }
+  const candidates = [value.imageUrl, value.url, value.urls, value.mUrls, value.urlList];
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
       const url = candidate.map(normalizeAvatarUrl).find(Boolean);
@@ -607,6 +662,58 @@ async function publishChatMessage(chatSourceId: string, overlayToken: string, me
   });
 }
 
+function youtubeMessageText(message: any) {
+  if (typeof message === "string") return message;
+  if (Array.isArray(message?.runs)) {
+    return message.runs
+      .map((run: any) => {
+        // YouTube emoji structure: run.emoji.image.thumbnails = [{url, width, height}, ...]
+        const emojiImage = run?.emoji?.image;
+        const thumbnails = Array.isArray(emojiImage?.thumbnails) ? emojiImage.thumbnails : [];
+        // Also handle the case where image itself is the array (legacy fallback)
+        const images = thumbnails.length > 0 ? thumbnails : (Array.isArray(emojiImage) ? emojiImage : []);
+        const bestImage = [...images].sort((a: any, b: any) => Number(b?.width ?? 0) - Number(a?.width ?? 0))[0];
+        const emojiUrl = bestImage?.url ?? bestImage?.url_private ?? bestImage?.urlPrivate;
+        // Also try direct url from the image object as fallback
+        const resolvedUrl = emojiUrl ?? normalizeAvatarUrl(emojiImage?.url) ?? firstImageUrl(emojiImage);
+        return resolvedUrl ? ` ${String(resolvedUrl)} ` : String(run?.text ?? "");
+      })
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  return message?.text ? String(message.text) : message?.toString?.() ?? "";
+}
+
+function tiktokEmoteUrl(emote: any) {
+  // TikTok emote image can be in various formats:
+  // emote.image.urlList, emote.image.imageUrl, emote.emote.image.urlList, etc.
+  const urlListUrl = (list: unknown) => {
+    if (!Array.isArray(list)) return undefined;
+    return list.map(normalizeAvatarUrl).find(Boolean);
+  };
+  return (
+    normalizeAvatarUrl(emote?.image?.imageUrl) ??
+    urlListUrl(emote?.image?.urlList) ??
+    firstImageUrl(emote?.image) ??
+    normalizeAvatarUrl(emote?.emote?.image?.imageUrl) ??
+    urlListUrl(emote?.emote?.image?.urlList) ??
+    firstImageUrl(emote?.emote?.image)
+  );
+}
+
+function tiktokMessageText(data: any) {
+  let message = typeof data?.comment === "string" ? data.comment : "";
+  const emotes = Array.isArray(data?.emotes) ? data.emotes : [];
+  for (const item of [...emotes].sort((a, b) => Number(b?.placeInComment ?? 0) - Number(a?.placeInComment ?? 0))) {
+    const url = tiktokEmoteUrl(item);
+    if (!url) continue;
+    const index = Math.max(0, Math.min(message.length, Number(item?.placeInComment ?? message.length)));
+    message = `${message.slice(0, index)} ${url} ${message.slice(index)}`.replace(/\s+/g, " ").trim();
+  }
+  return message;
+}
+
 async function connectTikTok(chatSourceId: string, target: string, overlayToken: string) {
   const requestId = Math.random().toString(36).slice(2);
   let lastError: unknown = null;
@@ -640,14 +747,33 @@ async function connectTikTok(chatSourceId: string, target: string, overlayToken:
         }
       });
 
-      tiktok.on(WebcastEvent.CHAT, (data: { msgId?: string; user?: { uniqueId?: string; nickname?: string; profilePictureUrl?: string }; comment?: string }) => {
+      tiktok.on(WebcastEvent.CHAT, (data: { msgId?: string; user?: { uniqueId?: string; nickname?: string; profilePictureUrl?: string }; comment?: string; emotes?: unknown[] }) => {
         if (!isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        const msgText = tiktokMessageText(data);
+        if (!msgText) return;
         const message: UnifiedChatMessage = {
           id: `tiktok-${data.msgId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
           platform: "tiktok",
           username: data.user?.uniqueId ?? "unknown",
           displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
-          message: data.comment ?? "",
+          message: msgText,
+          avatarUrl: resolveTikTokAvatarUrl(data.user),
+          badges: [],
+          timestamp: Date.now()
+        };
+        void publishChatMessage(chatSourceId, overlayToken, message);
+      });
+
+      tiktok.on(WebcastEvent.EMOTE, (data: { common?: { msgId?: string }; user?: { uniqueId?: string; nickname?: string; profilePictureUrl?: string }; emoteList?: unknown[] }) => {
+        if (!isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        const msgText = (Array.isArray(data.emoteList) ? data.emoteList : []).map(tiktokEmoteUrl).filter(Boolean).join(" ");
+        if (!msgText) return;
+        const message: UnifiedChatMessage = {
+          id: `tiktok-emote-${data.common?.msgId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
+          platform: "tiktok",
+          username: data.user?.uniqueId ?? "unknown",
+          displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
+          message: msgText,
           avatarUrl: resolveTikTokAvatarUrl(data.user),
           badges: [],
           timestamp: Date.now()
@@ -703,39 +829,58 @@ async function connectYouTube(chatSourceId: string, target: string, overlayToken
     const yt = await Innertube.create();
 
     let liveVideoId: string | null = null;
+    const normalizedTarget = target.trim();
 
-    // Check if target is a video URL or video ID
-    const videoMatch = target.match(/(?:v=|live\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-    if (videoMatch) {
-      liveVideoId = videoMatch[1];
-    } else if (/^[A-Za-z0-9_-]{11}$/.test(target)) {
-      liveVideoId = target;
-    } else {
-      // It's a channel handle or URL
-      const channelHandle = target.replace(/^@/, "").replace(/https?:\/\/(www\.)?youtube\.com\/(@)?/i, "").split("/")[0].split("?")[0];
-      const channelUrl = channelHandle.startsWith("UC") ? `https://www.youtube.com/channel/${channelHandle}` : `https://www.youtube.com/@${channelHandle}`;
-      
-      const channel = await yt.resolveURL(channelUrl);
-      if (!channel?.payload?.browseId) throw new Error(`ค้นหาช่อง YouTube ไม่พบ: ${target}`);
-      
-      const channelPage = await yt.getChannel(channel.payload.browseId);
-      const liveTab = await channelPage.getLiveStreams().catch(() => null);
-      const videos = liveTab?.videos || [];
-      
-      // Find the first video that is currently live
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const liveVideo = (videos as any[]).find((v) => v.is_live);
-      if (liveVideo?.id) {
-        liveVideoId = liveVideo.id;
-      } else if (videos.length > 0 && (videos[0] as any)?.id) {
-        liveVideoId = (videos[0] as any).id;
-      }
+    async function resolveChannelId(input: string) {
+      const channelHandle = input.replace(/^@/, "").replace(/https?:\/\/(www\.)?youtube\.com\/(@)?/i, "").split("/")[0].split("?")[0];
+      if (channelHandle.startsWith("UC")) return channelHandle;
+
+      const resolved = await yt.resolveURL(`https://www.youtube.com/@${channelHandle}`).catch(() => null);
+      if (resolved?.payload?.browseId) return String(resolved.payload.browseId);
+
+      const search = await yt.search(input, { type: "channel" }).catch(() => null);
+      const channelResult = (search?.results as any[] | undefined)?.find((item) => item?.type === "Channel" && item?.id);
+      return channelResult?.id ? String(channelResult.id) : null;
     }
 
-    if (!liveVideoId) throw new Error(`ไม่พบไลฟ์สตรีมที่กำลังออกอากาศสำหรับ: ${target} (ถ้าไลฟ์อยู่ แนะนำให้ใส่ URL ของไลฟ์โดยตรง)`);
+    async function findLiveVideoIdForChannel(channelId: string) {
+      const channelPage = await yt.getChannel(channelId);
+      const liveTab = await channelPage.getLiveStreams().catch(() => null);
+      const videos = liveTab?.videos || [];
+
+      const liveVideo = (videos as any[]).find((video) => video?.is_live);
+      if (liveVideo?.id) return String(liveVideo.id);
+      if (videos.length > 0 && (videos[0] as any)?.id) return String((videos[0] as any).id);
+      return null;
+    }
+
+    async function findLiveVideoIdBySearch(query: string) {
+      const search = await yt.search(query, { type: "video", features: ["live"] }).catch(() => null);
+      const liveVideo = (search?.results as any[] | undefined)?.find((item) => {
+        const id = item?.video_id ?? item?.id;
+        return id && (item?.is_live || item?.style === "VIDEO_STYLE_TYPE_LIVE_POST");
+      });
+      const id = liveVideo?.video_id ?? liveVideo?.id;
+      return id ? String(id) : null;
+    }
+
+    // Check if target is a video URL or video ID
+    const videoMatch = normalizedTarget.match(/(?:v=|live\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (videoMatch) {
+      liveVideoId = videoMatch[1];
+    } else if (/^[A-Za-z0-9_-]{11}$/.test(normalizedTarget)) {
+      liveVideoId = normalizedTarget;
+    } else {
+      // It's a channel handle or URL
+      const channelId = await resolveChannelId(normalizedTarget);
+      if (channelId) liveVideoId = await findLiveVideoIdForChannel(channelId);
+      if (!liveVideoId) liveVideoId = await findLiveVideoIdBySearch(normalizedTarget);
+    }
+
+    if (!liveVideoId) throw new Error(`เนเธกเนเธเธเนเธฅเธเนเธชเธ•เธฃเธตเธกเธ—เธตเนเธเธณเธฅเธฑเธเธญเธญเธเธญเธฒเธเธฒเธจเธชเธณเธซเธฃเธฑเธ: ${target} (เธ–เนเธฒเนเธฅเธเนเธญเธขเธนเน เนเธเธฐเธเธณเนเธซเนเนเธชเน URL เธเธญเธเนเธฅเธเนเนเธ”เธขเธ•เธฃเธ)`);
 
     const videoInfo = await yt.getInfo(liveVideoId);
-    if (!videoInfo.basic_info.is_live) throw new Error(`วิดีโอนี้ไม่ได้กำลังไลฟ์อยู่: ${liveVideoId}`);
+    if (!videoInfo.basic_info.is_live) throw new Error(`เธงเธดเธ”เธตเนเธญเธเธตเนเนเธกเนเนเธ”เนเธเธณเธฅเธฑเธเนเธฅเธเนเธญเธขเธนเน: ${liveVideoId}`);
     
     const livechat = videoInfo.getLiveChat();
     activeChats.set(chatSourceId, { connectionId, disconnect: () => livechat.stop() });
@@ -750,9 +895,7 @@ async function connectYouTube(chatSourceId: string, target: string, overlayToken
       const item = action.item;
       if (!item || item.type !== "LiveChatTextMessage") return;
 
-      const msgText = typeof item.message === "string" ? item.message :
-                      item.message?.text ? String(item.message.text) :
-                      item.message?.toString?.() ?? "";
+      const msgText = youtubeMessageText(item.message);
       if (!msgText) return;
 
       const message: UnifiedChatMessage = {
@@ -849,7 +992,7 @@ void chatCommandSub.subscribe(CHAT_COMMANDS_CHANNEL).then(() => {
 
 console.log("[chat] Chat connector manager ready");
 
-// ── BullMQ Workers ────────────────────────────────────────────────────
+// โ”€โ”€ BullMQ Workers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 
 const workers = [
   new Worker(

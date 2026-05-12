@@ -1,15 +1,18 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Button } from "@ezstream/ui";
 import { defaultGoogleTtsVoiceName, googleTtsVoices, resolveGoogleTtsVoiceName } from "@ezstream/shared";
 import type { GoogleTtsVoiceName } from "@ezstream/shared";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
+import { Badge, EmptyState, Field, Input, Notice, Select, Textarea } from "../../../components/ui-kit";
 import { API_URL, APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
 
 type Overlay = { id: string; name: string; token: string };
-type TtsWidget = { id: string; name: string; type: string; overlayId: string; isEnabled: boolean; visibility?: boolean; config?: unknown };
+type TtsWidget = { id: string; name: string; type: string; overlayId: string | null; isEnabled: boolean; visibility?: boolean; config?: unknown };
 type TtsJob = {
   id: string;
   text: string;
@@ -19,16 +22,44 @@ type TtsJob = {
   errorMessage?: string | null;
   widget?: { id: string; name: string; overlay?: { id: string; name: string; token: string } } | null;
 };
+type TtsPayload = { widgetId?: string; ttsJobId?: string; text: string; voice: string; speed: number; pitch: number; volume: number; audioUrl?: string };
 
-const statusClass: Record<TtsJob["status"], string> = {
-  QUEUED: "bg-amber-50 text-amber-700",
-  PROCESSING: "bg-sky-50 text-sky-700",
-  COMPLETED: "bg-emerald-50 text-emerald-700",
-  FAILED: "bg-rose-50 text-rose-700"
+const statusTone: Record<TtsJob["status"], "warning" | "info" | "success" | "danger"> = {
+  QUEUED: "warning",
+  PROCESSING: "info",
+  COMPLETED: "success",
+  FAILED: "danger"
 };
 
 function configObject(widget: TtsWidget | undefined) {
   return widget?.config && typeof widget.config === "object" && !Array.isArray(widget.config) ? (widget.config as Record<string, unknown>) : {};
+}
+
+function numberInRange(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function parseTtsPayload(payload: unknown): TtsPayload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as Record<string, unknown>;
+  if (typeof value.text !== "string" || !value.text.trim()) return null;
+  return {
+    widgetId: typeof value.widgetId === "string" ? value.widgetId : undefined,
+    ttsJobId: typeof value.ttsJobId === "string" ? value.ttsJobId : undefined,
+    text: value.text,
+    voice: typeof value.voice === "string" ? value.voice : "default",
+    speed: numberInRange(value.speed, 1, 0.5, 2),
+    pitch: numberInRange(value.pitch, 1, 0, 2),
+    volume: numberInRange(value.volume, 1, 0, 1),
+    audioUrl: typeof value.audioUrl === "string" ? value.audioUrl : undefined
+  };
+}
+
+function selectBrowserVoice(preference: string) {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length || preference === "default") return undefined;
+  return voices.find((item) => item.name === preference || item.voiceURI === preference);
 }
 
 export default function TtsPage() {
@@ -46,6 +77,67 @@ export default function TtsPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingVoice, setSavingVoice] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const ttsQueue = useRef<TtsPayload[]>([]);
+  const spokenTtsJobs = useRef<Set<string>>(new Set());
+  const isSpeaking = useRef(false);
+  const currentAudio = useRef<HTMLAudioElement | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  function speakNext() {
+    if (isSpeaking.current || typeof window === "undefined") return;
+    const next = ttsQueue.current.shift();
+    if (!next) return;
+
+    if (next.audioUrl) {
+      const audio = new Audio(next.audioUrl);
+      currentAudio.current = audio;
+      audio.volume = next.volume;
+      const finish = () => {
+        currentAudio.current = null;
+        isSpeaking.current = false;
+        speakNext();
+      };
+      isSpeaking.current = true;
+      audio.onended = finish;
+      audio.onerror = finish;
+      void audio.play().catch(finish);
+      return;
+    }
+
+    if (!("speechSynthesis" in window)) {
+      isSpeaking.current = false;
+      speakNext();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(next.text);
+    utterance.rate = next.speed;
+    utterance.pitch = next.pitch;
+    utterance.volume = next.volume;
+    const selectedVoice = selectBrowserVoice(next.voice);
+    if (selectedVoice) utterance.voice = selectedVoice;
+
+    const finish = () => {
+      isSpeaking.current = false;
+      speakNext();
+    };
+    isSpeaking.current = true;
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function enqueueTts(payload: unknown) {
+    const next = parseTtsPayload(payload);
+    if (!next || (next.widgetId && next.widgetId !== widgetId)) return;
+    if (next.ttsJobId) {
+      if (spokenTtsJobs.current.has(next.ttsJobId)) return;
+      spokenTtsJobs.current.add(next.ttsJobId);
+    }
+    ttsQueue.current.push(next);
+    speakNext();
+  }
 
   async function load() {
     const [nextJobs, nextWidgets, nextOverlays] = await Promise.all([
@@ -66,8 +158,32 @@ export default function TtsPage() {
   }
 
   useEffect(() => {
-    void load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load TTS data"));
+    void load()
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลดข้อมูล TTS ไม่สำเร็จ"))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!widgetId) return;
+    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
+    socketRef.current = socket;
+
+    const joinRoom = () => socket.emit("overlay.join", { widgetId });
+    if (socket.connected) joinRoom();
+    socket.on("connect", joinRoom);
+    socket.on("tts.speak", enqueueTts);
+    socket.on("tts.completed", () => void load().catch(() => undefined));
+
+    return () => {
+      socket.close();
+      if (socketRef.current === socket) socketRef.current = null;
+      ttsQueue.current = [];
+      isSpeaking.current = false;
+      currentAudio.current?.pause();
+      currentAudio.current = null;
+      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
+  }, [widgetId]);
 
   const selectedWidget = widgets.find((widget) => widget.id === widgetId);
   const selectedWidgetConfig = configObject(selectedWidget);
@@ -96,10 +212,10 @@ export default function TtsPage() {
         method: "POST",
         body: JSON.stringify({ text: text.trim(), widgetId, voice, speed, pitch, volume })
       });
-      setMessage("TTS job queued. Keep the overlay open to hear the audio.");
+      setMessage("ส่ง TTS job แล้ว หน้าเว็บและ Widget จะเล่นเสียงเมื่อประมวลผลเสร็จ");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "TTS test failed");
+      setError(err instanceof Error ? err.message : "ทดสอบ TTS ไม่สำเร็จ");
     } finally {
       setSubmitting(false);
     }
@@ -115,10 +231,10 @@ export default function TtsPage() {
         method: "PATCH",
         body: JSON.stringify({ config: { ...selectedWidgetConfig, voice, speed, pitch, volume, includeSenderName } })
       });
-      setMessage("Saved TTS settings.");
+      setMessage("บันทึกค่า TTS แล้ว");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the widget voice");
+      setError(err instanceof Error ? err.message : "บันทึกเสียงเริ่มต้นไม่สำเร็จ");
     } finally {
       setSavingVoice(false);
     }
@@ -141,126 +257,116 @@ export default function TtsPage() {
         <ResourceCard>
           <form onSubmit={submit} className="grid gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="tts-widget">TTS Widget</label>
-              <select id="tts-widget" className="w-full rounded-md border border-slate-800 px-3 py-2" value={widgetId} onChange={(event) => selectWidget(event.target.value)}>
+              <h2 className="text-lg font-semibold text-white">ทดสอบเสียงและค่าเริ่มต้น</h2>
+              <p className="mt-1 text-sm text-slate-400">เลือก TTS widget แล้วส่งข้อความทดสอบไปยัง overlay</p>
+            </div>
+
+            <Field label="TTS Widget">
+              <Select id="tts-widget" value={widgetId} onChange={(event) => selectWidget(event.target.value)} disabled={loading}>
                 {widgets.length ? widgets.map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>) : <option value="">No TTS widget</option>}
-              </select>
+              </Select>
               {selectedWidget ? (
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  <span className={`rounded-full px-2 py-1 ${selectedWidget.isEnabled ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
-                    {selectedWidget.isEnabled ? "Widget เปิดใช้งานอยู่" : "Widget ปิดใช้งานอยู่"}
-                  </span>
-                  <span className={`rounded-full px-2 py-1 ${selectedWidget.visibility !== false ? "bg-sky-950 text-sky-300" : "bg-slate-800 text-slate-400"}`}>
-                    {selectedWidget.visibility !== false ? "แสดงบน Overlay" : "ซ่อนบน Overlay"}
-                  </span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge tone={selectedWidget.isEnabled ? "success" : "neutral"}>{selectedWidget.isEnabled ? "Widget เปิดใช้งาน" : "Widget ปิดใช้งาน"}</Badge>
+                  <Badge tone={selectedWidget.visibility !== false ? "info" : "neutral"}>{selectedWidget.visibility !== false ? "แสดงบน Overlay" : "ซ่อนบน Overlay"}</Badge>
                 </div>
               ) : null}
-            </div>
+            </Field>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="tts-voice">Voice</label>
-              <div className="flex flex-wrap gap-2">
-                <select id="tts-voice" className="min-w-0 flex-1 rounded-md border border-slate-800 px-3 py-2" value={voice} onChange={(event) => setVoice(resolveGoogleTtsVoiceName(event.target.value, defaultGoogleTtsVoiceName))}>
-                  {googleTtsVoices.map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}
-                </select>
-              </div>
-            </div>
+            <Field label="Voice">
+              <Select id="tts-voice" value={voice} onChange={(event) => setVoice(resolveGoogleTtsVoiceName(event.target.value, defaultGoogleTtsVoiceName))}>
+                {googleTtsVoices.map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}
+              </Select>
+            </Field>
 
-            <label className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-              <span>อ่านชื่อคนส่งก่อนข้อความแชท</span>
-              <input
-                className="h-4 w-4"
-                type="checkbox"
-                checked={includeSenderName}
-                onChange={(event) => setIncludeSenderName(event.target.checked)}
-              />
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-200">
+              <span>อ่านชื่อผู้ส่งก่อนข้อความแชท</span>
+              <input className="h-4 w-4 accent-indigo-500" type="checkbox" checked={includeSenderName} onChange={(event) => setIncludeSenderName(event.target.checked)} />
             </label>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="tts-text">Test text</label>
-              <textarea
-                id="tts-text"
-                className="min-h-28 w-full rounded-md border border-slate-800 px-3 py-2"
-                maxLength={300}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-              />
-              <p className="mt-1 text-xs text-slate-400">{text.length}/300 characters</p>
-            </div>
+            <Field label="ข้อความทดสอบ" hint={`${text.length}/300 characters`}>
+              <Textarea id="tts-text" className="min-h-28" maxLength={300} value={text} onChange={(event) => setText(event.target.value)} />
+            </Field>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="text-sm text-slate-300">
-                Speed
-                <input className="mt-1 w-full" type="range" min="0.5" max="2" step="0.1" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
-                <span className="text-xs text-slate-400">{speed.toFixed(1)}</span>
-              </label>
-              <label className="text-sm text-slate-300">
-                Pitch
-                <input className="mt-1 w-full" type="range" min="0" max="2" step="0.1" value={pitch} onChange={(event) => setPitch(Number(event.target.value))} />
-                <span className="text-xs text-slate-400">{pitch.toFixed(1)}</span>
-              </label>
-              <label className="text-sm text-slate-300">
-                Volume
-                <input className="mt-1 w-full" type="range" min="0" max="1" step="0.1" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
-                <span className="text-xs text-slate-400">{volume.toFixed(1)}</span>
-              </label>
+              <RangeField label="Speed" min="0.5" max="2" step="0.1" value={speed} onChange={setSpeed} />
+              <RangeField label="Pitch" min="0" max="2" step="0.1" value={pitch} onChange={setPitch} />
+              <RangeField label="Volume" min="0" max="1" step="0.1" value={volume} onChange={setVolume} />
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button className="rounded-md bg-slate-950 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-slate-400" disabled={!canSubmit}>
-                {submitting ? "Sending..." : "Test TTS"}
-              </button>
-              <button className="rounded-md border border-slate-800 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-800" type="button" disabled={!selectedWidget || savingVoice} onClick={() => void saveVoiceDefault()}>
+              <Button disabled={!canSubmit}>{submitting ? "Sending..." : "Test TTS"}</Button>
+              <Button variant="secondary" type="button" disabled={!selectedWidget || savingVoice} onClick={() => void saveVoiceDefault()}>
                 {savingVoice ? "Saving..." : "Save default"}
-              </button>
+              </Button>
             </div>
-            {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
-            {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+            {message ? <Notice tone="success">{message}</Notice> : null}
+            {error ? <Notice tone="error">{error}</Notice> : null}
           </form>
         </ResourceCard>
 
         <ResourceCard>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <p className="text-sm font-medium text-slate-300">Overlay URL for OBS</p>
-              {overlayUrl ? <p className="break-all text-sm text-slate-400">{overlayUrl}</p> : <p className="text-sm text-slate-400">Select a TTS widget first</p>}
+              <p className="text-sm font-medium text-slate-200">Overlay URL for OBS</p>
+              {overlayUrl ? <p className="mt-1 break-all text-sm text-slate-400">{overlayUrl}</p> : <p className="mt-1 text-sm text-slate-500">เลือก TTS widget ก่อน</p>}
             </div>
             <div className="flex flex-wrap gap-2">
-              {overlayUrl ? (
-                <button className="rounded-md border border-slate-800 px-3 py-2 text-sm" onClick={() => void copyUrl(overlayUrl, " Overlay URL")} type="button">
-                  คัดลอก Overlay URL
-                </button>
-              ) : null}
+              {overlayUrl ? <Button size="sm" variant="secondary" onClick={() => void copyUrl(overlayUrl, " Overlay URL")} type="button">คัดลอก Overlay URL</Button> : null}
               {previewUrl ? (
                 <>
-                  <button className="rounded-md border border-slate-800 px-3 py-2 text-sm" onClick={() => void copyUrl(previewUrl, " Preview URL")} type="button">
-                    คัดลอก Preview URL
-                  </button>
-                  <a className="inline-flex rounded-md border border-slate-800 px-3 py-2 text-sm" href={previewUrl} target="_blank" rel="noreferrer">Open preview with debug</a>
+                  <Button size="sm" variant="secondary" onClick={() => void copyUrl(previewUrl, " Preview URL")} type="button">คัดลอก Preview URL</Button>
+                  <Button size="sm" variant="ghost" asChild><a href={previewUrl} target="_blank" rel="noreferrer">Open preview</a></Button>
                 </>
               ) : null}
             </div>
-            <p className="text-sm text-slate-400">Google Cloud Text-to-Speech generates an MP3, then the overlay machine plays that audio.</p>
-            <p className="text-xs text-slate-400">Current voice: {voice}</p>
+            <p className="text-sm leading-6 text-slate-400">Google Cloud Text-to-Speech สร้าง MP3 แล้วให้เครื่องที่เปิด overlay เล่นเสียงนั้น</p>
+            <p className="text-xs text-slate-500">Current voice: {voice}</p>
           </div>
         </ResourceCard>
       </div>
 
-      <section className="mt-4 grid gap-3">
-        <h2 className="text-lg font-semibold">Recent TTS jobs</h2>
+      <section className="mt-5 grid gap-3">
+        <h2 className="text-lg font-semibold text-white">Recent TTS jobs</h2>
         {latestJobs.length ? latestJobs.map((job) => (
           <ResourceCard key={job.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-medium">{job.text}</p>
-                <p className="text-sm text-slate-400">{job.widget?.name ?? "No widget"} · {job.voice} · {new Date(job.createdAt).toLocaleString()}</p>
-                {job.errorMessage ? <p className="mt-1 text-sm text-rose-700">{job.errorMessage}</p> : null}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="break-words font-medium text-white">{job.text}</p>
+                <p className="mt-1 text-sm text-slate-400">{job.widget?.name ?? "No widget"} · {job.voice} · {new Date(job.createdAt).toLocaleString()}</p>
+                {job.errorMessage ? <p className="mt-1 text-sm text-rose-300">{job.errorMessage}</p> : null}
               </div>
-              <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusClass[job.status]}`}>{job.status}</span>
+              <Badge tone={statusTone[job.status]}>{job.status}</Badge>
             </div>
           </ResourceCard>
-        )) : <ResourceCard><p className="text-sm text-slate-400">No TTS jobs yet</p></ResourceCard>}
+        )) : <EmptyState title="ยังไม่มี TTS job" description="ส่งข้อความทดสอบเพื่อดูสถานะ job ล่าสุดที่นี่" />}
       </section>
     </DashboardShell>
+  );
+}
+
+function RangeField({
+  label,
+  max,
+  min,
+  onChange,
+  step,
+  value
+}: {
+  label: string;
+  max: string;
+  min: string;
+  onChange: (value: number) => void;
+  step: string;
+  value: number;
+}) {
+  return (
+    <label className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm text-slate-300">
+      <span className="flex justify-between gap-3">
+        {label}
+        <span className="text-xs text-slate-500">{value.toFixed(1)}</span>
+      </span>
+      <Input className="mt-2 h-2 px-0 accent-indigo-500" type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    </label>
   );
 }

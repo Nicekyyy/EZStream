@@ -71,6 +71,19 @@ export function googleTtsVoiceLanguageCode(voiceName: string) {
 
 // ── Chat Overlay ──────────────────────────────────────────
 
+export function sanitizeTtsText(value: string) {
+  return value
+    .replace(/<img\b[^>]*>/gi, " ")
+    .replace(/https?:\/\/[^\s<>"']+/gi, " ")
+    .replace(/:(?:[a-z0-9_+-]+-)*[a-z0-9_+-]+:/gi, " ")
+    .replace(/\[[a-z0-9_+-]{2,32}\]/gi, " ")
+    .replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, " ")
+    .replace(/[\p{Extended_Pictographic}\u{1F300}-\u{1FAFF}](?:[\uFE0F\uFE0E]|\u200D[\p{Extended_Pictographic}\u{1F300}-\u{1FAFF}])*/gu, " ")
+    .replace(/[\u200D\uFE0F\uFE0E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export const chatPlatforms = ["TIKTOK", "YOUTUBE"] as const;
 export type ChatPlatformType = (typeof chatPlatforms)[number];
 

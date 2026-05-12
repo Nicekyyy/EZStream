@@ -6,9 +6,9 @@ import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { WidgetsService } from "./widgets.service.js";
 
 class CreateWidgetDto {
+  @IsOptional()
   @IsString()
-  @IsDefined()
-  overlayId!: string;
+  overlayId?: string | null;
 
   @IsEnum(WidgetType)
   @IsDefined()
@@ -56,7 +56,7 @@ class CreateWidgetDto {
 class UpdateWidgetDto {
   @IsOptional()
   @IsString()
-  overlayId?: string;
+  overlayId?: string | null;
 
   @IsOptional()
   @IsEnum(WidgetType)

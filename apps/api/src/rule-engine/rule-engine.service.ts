@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName } from "@ezstream/shared";
+import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName, sanitizeTtsText } from "@ezstream/shared";
 import type { Prisma, Rule } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { QueuesService } from "../queues/queues.service.js";
@@ -196,7 +196,8 @@ export class RuleEngineService {
   }
 
   private async createTtsJob(creatorId: string, eventLogId: string, ruleId: string | undefined, action: RuleAction, payload: Record<string, unknown>) {
-    const text = renderTemplate(action.textTemplate ?? "{username} said {message}", payload);
+    const text = sanitizeTtsText(renderTemplate(action.textTemplate ?? "{username} said {message}", payload));
+    if (!text) return;
     const widget = action.widgetId ? await this.prisma.widget.findFirst({ where: { id: action.widgetId, creatorId }, select: { config: true } }) : null;
     const widgetConfig = jsonObject(widget?.config);
     const voice = resolveGoogleTtsVoiceName(action.voice ?? widgetConfig.voice, defaultGoogleTtsVoice);
@@ -234,6 +235,15 @@ export class RuleEngineService {
   private async publishWidget(widgetId: string, event: string, payload: unknown) {
     const widget = await this.prisma.widget.findUnique({ where: { id: widgetId }, include: { overlay: true } });
     if (!widget) return;
+    await this.redis.publish(
+      "ezstream:realtime",
+      JSON.stringify({
+        room: `widget:${widget.id}`,
+        event,
+        payload
+      })
+    );
+    if (!widget.overlay) return;
     await this.redis.publish(
       "ezstream:realtime",
       JSON.stringify({

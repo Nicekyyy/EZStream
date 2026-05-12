@@ -1,8 +1,10 @@
 "use client";
 
+import { Button } from "@ezstream/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { Field, Input, Notice } from "../../../components/ui-kit";
 import { api, setToken } from "../../../lib/api";
 
 export default function RegisterPage() {
@@ -32,17 +34,36 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <form onSubmit={submit} className="space-y-4 rounded-md border border-slate-800 bg-slate-900 p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold">สมัครบัญชี Creator</h1>
-        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="ชื่อที่แสดง" />
-        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" />
-        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่านอย่างน้อย 8 ตัว" type="password" />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button disabled={loading} className="w-full rounded-md bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">
-          {loading ? "กำลังสมัคร" : "สมัครบัญชี"}
-        </button>
-        <Link className="block text-sm text-slate-400 underline" href="/auth/login">มีบัญชีแล้ว</Link>
+    <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(79,70,229,0.16),transparent_32rem),#020617] px-4 py-10 text-slate-100">
+      <form onSubmit={submit} className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900/85 p-6 shadow-xl shadow-black/20">
+        <div className="mb-6">
+          <p className="text-sm font-medium text-indigo-300">EZStream</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">สมัครบัญชี Creator</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-400">สร้างพื้นที่สำหรับจัดการ live overlay, widget และ automation ของคุณ</p>
+        </div>
+
+        <div className="space-y-4">
+          <Field label="ชื่อที่แสดง">
+            <Input autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+          </Field>
+          <Field label="อีเมล">
+            <Input autoComplete="email" inputMode="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </Field>
+          <Field label="รหัสผ่าน" hint="อย่างน้อย 8 ตัวอักษร">
+            <Input autoComplete="new-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </Field>
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          <Button className="w-full" disabled={loading} type="submit">
+            {loading ? "กำลังสมัคร..." : "สมัครบัญชี"}
+          </Button>
+        </div>
+
+        <div className="mt-5 text-center text-sm text-slate-400">
+          มีบัญชีแล้ว?{" "}
+          <Link className="font-medium text-indigo-300 hover:text-indigo-200" href="/auth/login">
+            เข้าสู่ระบบ
+          </Link>
+        </div>
       </form>
     </main>
   );

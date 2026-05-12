@@ -1,8 +1,10 @@
 "use client";
 
+import { Button } from "@ezstream/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { Field, Input, Notice } from "../../../components/ui-kit";
 import { api, setToken } from "../../../lib/api";
 
 export default function LoginPage() {
@@ -31,16 +33,33 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <form onSubmit={submit} className="space-y-4 rounded-md border border-slate-800 bg-slate-900 p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold">เข้าสู่ระบบ</h1>
-        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" />
-        <input className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="รหัสผ่าน" type="password" />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button disabled={loading} className="w-full rounded-md bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">
-          {loading ? "กำลังเข้าสู่ระบบ" : "เข้าสู่ระบบ"}
-        </button>
-        <Link className="block text-sm text-slate-400 underline" href="/auth/register">สมัครบัญชีใหม่</Link>
+    <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(79,70,229,0.16),transparent_32rem),#020617] px-4 py-10 text-slate-100">
+      <form onSubmit={submit} className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900/85 p-6 shadow-xl shadow-black/20">
+        <div className="mb-6">
+          <p className="text-sm font-medium text-indigo-300">EZStream</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">เข้าสู่ระบบ</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-400">ใช้บัญชี demo หรือบัญชี creator ของคุณเพื่อจัดการ overlay และ widget</p>
+        </div>
+
+        <div className="space-y-4">
+          <Field label="อีเมล">
+            <Input autoComplete="email" inputMode="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </Field>
+          <Field label="รหัสผ่าน">
+            <Input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </Field>
+          {error ? <Notice tone="error">{error}</Notice> : null}
+          <Button className="w-full" disabled={loading} type="submit">
+            {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+          </Button>
+        </div>
+
+        <div className="mt-5 text-center text-sm text-slate-400">
+          ยังไม่มีบัญชี?{" "}
+          <Link className="font-medium text-indigo-300 hover:text-indigo-200" href="/auth/register">
+            สมัครบัญชีใหม่
+          </Link>
+        </div>
       </form>
     </main>
   );

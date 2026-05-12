@@ -37,6 +37,7 @@ export declare const defaultGoogleTtsVoiceName: GoogleTtsVoiceName;
 export declare function isGoogleTtsVoiceName(value: unknown): value is GoogleTtsVoiceName;
 export declare function resolveGoogleTtsVoiceName(value: unknown, fallback?: string): "th-TH-Neural2-C" | "th-TH-Standard-A" | "en-US-Neural2-F" | "en-US-Neural2-J" | "en-US-Studio-O";
 export declare function googleTtsVoiceLanguageCode(voiceName: string): "th-TH" | "en-US";
+export declare function sanitizeTtsText(value: string): string;
 export declare const chatPlatforms: readonly ["TIKTOK", "YOUTUBE"];
 export type ChatPlatformType = (typeof chatPlatforms)[number];
 export type UnifiedChatMessage = {

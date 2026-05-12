@@ -1,18 +1,24 @@
 "use client";
 
+import { Button } from "@ezstream/ui";
+import type { UnifiedChatMessage } from "@ezstream/shared";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
+import { WidgetRenderer, type OverlayWidget } from "../../../../components/widget-renderer";
+import { Badge, Field, Input, Notice, Select } from "../../../../components/ui-kit";
 import { API_URL, APP_URL, api } from "../../../../lib/api";
 import { copyText } from "../../../../lib/clipboard";
 
-type Overlay = { id: string; name: string };
-
+type Overlay = { id: string; name: string; token: string };
+type EventLog = { id: string; eventType: string; payload: unknown; createdAt: string };
+type PreviewChatMessage = UnifiedChatMessage & { overlayId?: string; overlayToken?: string };
 type Widget = {
   id: string;
-  overlayId: string;
+  overlayId: string | null;
   name: string;
   type: string;
   isEnabled: boolean;
@@ -27,10 +33,127 @@ type Widget = {
   overlay?: Overlay;
 };
 
+type ChatSettingsDraft = {
+  maxMessages: number;
+  order: string;
+  align: string;
+  bubbleStyle: string;
+  fontFamily: string;
+  showAvatar: boolean;
+  showName: boolean;
+  showPlatformLogo: boolean;
+  showEmptyState: boolean;
+  animateMessages: boolean;
+  compactMode: boolean;
+  textShadow: boolean;
+  backgroundColor: string;
+  bubbleColor: string;
+  textColor: string;
+  tiktokNameColor: string;
+  youtubeNameColor: string;
+  backgroundOpacity: number;
+  bubbleOpacity: number;
+  borderOpacity: number;
+  fontSize: number;
+  nameFontSize: number;
+  avatarSize: number;
+  padding: number;
+  gap: number;
+  borderRadius: number;
+  messagePaddingX: number;
+  messagePaddingY: number;
+};
+
 function configObject(widget: Widget | undefined) {
   return widget?.config && typeof widget.config === "object" && !Array.isArray(widget.config)
     ? (widget.config as Record<string, unknown>)
     : {};
+}
+
+function configNumber(config: Record<string, unknown>, key: keyof ChatSettingsDraft, fallback: number) {
+  const value = config[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function configString(config: Record<string, unknown>, key: keyof ChatSettingsDraft, fallback: string) {
+  const value = config[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function configBool(config: Record<string, unknown>, key: keyof ChatSettingsDraft, fallback: boolean) {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function chatMessageFromEvent(event: EventLog): PreviewChatMessage | null {
+  if (event.eventType !== "live.chat.message") return null;
+  const payload = objectValue(event.payload);
+  const message = stringValue(payload.message);
+  if (!message) return null;
+  const username = stringValue(payload.username) ?? "unknown";
+  return {
+    id: stringValue(payload.id) ?? `event-${event.id}`,
+    platform: payload.platform === "youtube" ? "youtube" : "tiktok",
+    username,
+    displayName: stringValue(payload.displayName) ?? username,
+    message,
+    avatarUrl: stringValue(payload.avatarUrl),
+    badges: Array.isArray(payload.badges) ? payload.badges.filter((item): item is string => typeof item === "string") : [],
+    timestamp: numberValue(payload.timestamp) ?? new Date(event.createdAt).getTime(),
+    overlayId: stringValue(payload.overlayId),
+    overlayToken: stringValue(payload.overlayToken)
+  };
+}
+
+function mergeChatMessages(current: PreviewChatMessage[], incoming: PreviewChatMessage[]) {
+  const byId = new Map<string, PreviewChatMessage>();
+  for (const item of [...current, ...incoming]) byId.set(item.id, item);
+  return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-50);
+}
+
+function chatSettingsFromConfig(config: Record<string, unknown>): ChatSettingsDraft {
+  return {
+    maxMessages: configNumber(config, "maxMessages", 8),
+    order: configString(config, "order", "newest-bottom"),
+    align: configString(config, "align", "left"),
+    bubbleStyle: configString(config, "bubbleStyle", "glass"),
+    fontFamily: configString(config, "fontFamily", "system"),
+    showAvatar: configBool(config, "showAvatar", true),
+    showName: configBool(config, "showName", true),
+    showPlatformLogo: configBool(config, "showPlatformLogo", true),
+    showEmptyState: configBool(config, "showEmptyState", true),
+    animateMessages: configBool(config, "animateMessages", true),
+    compactMode: configBool(config, "compactMode", false),
+    textShadow: configBool(config, "textShadow", true),
+    backgroundColor: configString(config, "backgroundColor", "#000000"),
+    bubbleColor: configString(config, "bubbleColor", "#000000"),
+    textColor: configString(config, "textColor", "#ffffff"),
+    tiktokNameColor: configString(config, "tiktokNameColor", "#f9a8d4"),
+    youtubeNameColor: configString(config, "youtubeNameColor", "#fca5a5"),
+    backgroundOpacity: configNumber(config, "backgroundOpacity", 0),
+    bubbleOpacity: configNumber(config, "bubbleOpacity", 0.55),
+    borderOpacity: configNumber(config, "borderOpacity", 0.1),
+    fontSize: configNumber(config, "fontSize", 15),
+    nameFontSize: configNumber(config, "nameFontSize", 13),
+    avatarSize: configNumber(config, "avatarSize", 32),
+    padding: configNumber(config, "padding", 12),
+    gap: configNumber(config, "gap", 8),
+    borderRadius: configNumber(config, "borderRadius", 6),
+    messagePaddingX: configNumber(config, "messagePaddingX", 12),
+    messagePaddingY: configNumber(config, "messagePaddingY", 8)
+  };
 }
 
 export default function WidgetDetailPage() {
@@ -45,23 +168,48 @@ export default function WidgetDetailPage() {
   const [width, setWidth] = useState(400);
   const [height, setHeight] = useState(160);
   const [zIndex, setZIndex] = useState(1);
+  const [chatDraft, setChatDraft] = useState<ChatSettingsDraft>(() => chatSettingsFromConfig({}));
+  const [chatPreviewMessages, setChatPreviewMessages] = useState<PreviewChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const socketRef = useRef<Socket | null>(null);
 
   const widgetConfig = configObject(widget);
-  const showPlatformLogo = widgetConfig.showPlatformLogo !== false;
   const widgetUrl = widget && APP_URL ? `${APP_URL}/widget/${widget.id}` : "";
+  const isChatWidget = widget?.type === "CHAT_WIDGET";
+  const selectedOverlay = overlays.find((overlay) => overlay.id === draftOverlayId);
+  const previewConfig = isChatWidget ? { ...widgetConfig, ...chatDraft } : widgetConfig;
+
+  const previewWidget = useMemo<OverlayWidget | null>(() => {
+    if (!widget) return null;
+    return {
+      id: widget.id,
+      name: draftName || widget.name,
+      type: widget.type,
+      positionX: 0,
+      positionY: 0,
+      width: Math.max(1, width || widget.width),
+      height: Math.max(1, height || widget.height),
+      zIndex,
+      visibility: true,
+      config: previewConfig,
+      state: widget.state && typeof widget.state.state === "object" && !Array.isArray(widget.state.state)
+        ? { state: widget.state.state as Record<string, unknown> }
+        : undefined
+    };
+  }, [draftName, height, previewConfig, widget, width, zIndex]);
 
   function syncDraft(nextWidget: Widget) {
     setWidget(nextWidget);
     setDraftName(nextWidget.name);
-    setDraftOverlayId(nextWidget.overlayId);
+    setDraftOverlayId(nextWidget.overlayId ?? "");
     setPositionX(nextWidget.positionX);
     setPositionY(nextWidget.positionY);
     setWidth(nextWidget.width);
     setHeight(nextWidget.height);
     setZIndex(nextWidget.zIndex);
+    setChatDraft(chatSettingsFromConfig(configObject(nextWidget)));
   }
 
   async function load() {
@@ -79,6 +227,48 @@ export default function WidgetDetailPage() {
     void load();
   }, [widgetId]);
 
+  async function loadPreviewChatMessages(overlay: Overlay | undefined) {
+    if (!overlay) {
+      setChatPreviewMessages([]);
+      return;
+    }
+    const events = await api<EventLog[]>("/events");
+    const messages = events
+      .map(chatMessageFromEvent)
+      .filter((item): item is PreviewChatMessage => Boolean(item))
+      .filter((item) => item.overlayId === overlay.id || item.overlayToken === overlay.token)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-50);
+    setChatPreviewMessages(messages);
+  }
+
+  useEffect(() => {
+    if (!isChatWidget) {
+      setChatPreviewMessages([]);
+      return;
+    }
+    void loadPreviewChatMessages(selectedOverlay).catch(() => undefined);
+  }, [isChatWidget, selectedOverlay?.id, selectedOverlay?.token]);
+
+  useEffect(() => {
+    if (!isChatWidget || !selectedOverlay?.token) return;
+    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
+    socketRef.current = socket;
+
+    const joinRoom = () => socket.emit("overlay.join", { token: selectedOverlay.token });
+    if (socket.connected) joinRoom();
+    socket.on("connect", joinRoom);
+    socket.on("chat.message", (payload: PreviewChatMessage) => {
+      if ((payload.overlayId && payload.overlayId !== selectedOverlay.id) || (payload.overlayToken && payload.overlayToken !== selectedOverlay.token)) return;
+      setChatPreviewMessages((current) => mergeChatMessages(current, [payload]));
+    });
+
+    return () => {
+      socket.close();
+      if (socketRef.current === socket) socketRef.current = null;
+    };
+  }, [isChatWidget, selectedOverlay?.id, selectedOverlay?.token]);
+
   async function updateWidget(data: Partial<Widget> & { config?: Record<string, unknown> }, successMessage?: string) {
     try {
       setBusy(true);
@@ -94,34 +284,18 @@ export default function WidgetDetailPage() {
     }
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
+  async function saveLayout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = draftName.trim();
     if (!name) {
       setError("กรุณาใส่ชื่อ Widget");
       return;
     }
-    if (!draftOverlayId) {
-      setError("กรุณาเลือก Overlay");
-      return;
-    }
-
-    await updateWidget(
-      {
-        name,
-        overlayId: draftOverlayId,
-        positionX,
-        positionY,
-        width,
-        height,
-        zIndex,
-      },
-      "บันทึก Widget แล้ว",
-    );
+    await updateWidget({ name, overlayId: draftOverlayId || null, positionX, positionY, width, height, zIndex }, "บันทึกข้อมูล Widget แล้ว");
   }
 
-  async function updateConfig(config: Record<string, unknown>) {
-    await updateWidget({ config: { ...widgetConfig, ...config } }, "บันทึกการตั้งค่า Widget แล้ว");
+  async function saveChatSettings() {
+    await updateWidget({ config: { ...widgetConfig, ...chatDraft } }, "บันทึกการตั้งค่า Chat แล้ว");
   }
 
   async function testTrigger() {
@@ -141,7 +315,6 @@ export default function WidgetDetailPage() {
   async function deleteWidget() {
     if (!widget) return;
     if (!window.confirm(`ลบ Widget "${widget.name}"?`)) return;
-
     try {
       setBusy(true);
       setError("");
@@ -166,205 +339,264 @@ export default function WidgetDetailPage() {
 
   return (
     <DashboardShell title="จัดการ Widget">
-      <div className="mb-4">
-        <Link className="text-sm text-slate-400 hover:text-white" href="/dashboard/widgets">
-          กลับไปหน้า Widgets
-        </Link>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/dashboard/widgets">กลับไปหน้า Widgets</Link>
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          {widget ? <Badge tone={widget.isEnabled ? "success" : "neutral"}>{widget.isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge> : null}
+          {widget ? <Badge tone={widget.visibility ? "info" : "neutral"}>{widget.visibility ? "แสดงบน Overlay" : "ซ่อนบน Overlay"}</Badge> : null}
+        </div>
       </div>
 
-      {error ? <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-      {message ? (
-        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {message}
-        </div>
-      ) : null}
-
-      <ResourceCard>
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="font-medium">{widget?.name ?? "กำลังโหลด"}</p>
-            <p className="text-sm text-slate-400">
-              {widget ? `${widget.type} · ${widget.overlay?.name ?? widget.overlayId}` : "กำลังโหลดข้อมูล Widget"}
-            </p>
-          </div>
-          {widget ? (
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className={`rounded-full px-2 py-1 ${widget.isEnabled ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
-                {widget.isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}
-              </span>
-              <span className={`rounded-full px-2 py-1 ${widget.visibility ? "bg-sky-950 text-sky-300" : "bg-slate-800 text-slate-400"}`}>
-                {widget.visibility ? "แสดงบน Overlay" : "ซ่อนบน Overlay"}
-              </span>
-            </div>
-          ) : null}
-        </div>
-
-        <form className="grid gap-4 lg:grid-cols-[1fr_1fr]" onSubmit={(event) => void save(event)}>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-200">ชื่อ Widget</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"
-              disabled={busy || !widget}
-              onChange={(event) => setDraftName(event.target.value)}
-              value={draftName}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-200">Overlay</span>
-            <select
-              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"
-              disabled={busy || !widget}
-              onChange={(event) => setDraftOverlayId(event.target.value)}
-              value={draftOverlayId}
-            >
-              {overlays.map((overlay) => (
-                <option key={overlay.id} value={overlay.id}>
-                  {overlay.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-5">
-            <NumberField disabled={busy || !widget} label="X" onChange={setPositionX} value={positionX} />
-            <NumberField disabled={busy || !widget} label="Y" onChange={setPositionY} value={positionY} />
-            <NumberField disabled={busy || !widget} label="กว้าง" min={1} onChange={setWidth} value={width} />
-            <NumberField disabled={busy || !widget} label="สูง" min={1} onChange={setHeight} value={height} />
-            <NumberField disabled={busy || !widget} label="Layer" onChange={setZIndex} value={zIndex} />
-          </div>
-
-          <div className="flex flex-wrap gap-2 lg:col-span-2">
-            <button className="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-950 disabled:opacity-50" disabled={busy || !widget} type="submit">
-              บันทึก
-            </button>
-            <button
-              className="rounded-md border border-slate-800 px-3 py-2 text-sm disabled:opacity-50"
-              disabled={busy || !widget}
-              onClick={() => widget && void updateWidget({ isEnabled: !widget.isEnabled }, widget.isEnabled ? "ปิดใช้งาน Widget แล้ว" : "เปิดใช้งาน Widget แล้ว")}
-              type="button"
-            >
-              {widget?.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-            </button>
-            <button
-              className="rounded-md border border-slate-800 px-3 py-2 text-sm disabled:opacity-50"
-              disabled={busy || !widget}
-              onClick={() => widget && void updateWidget({ visibility: !widget.visibility }, widget.visibility ? "ซ่อน Widget แล้ว" : "แสดง Widget แล้ว")}
-              type="button"
-            >
-              {widget?.visibility ? "ซ่อนบน Overlay" : "แสดงบน Overlay"}
-            </button>
-            <button className="rounded-md border border-slate-800 px-3 py-2 text-sm disabled:opacity-50" disabled={busy || !widget} onClick={() => void testTrigger()} type="button">
-              Test Trigger
-            </button>
-          </div>
-        </form>
-      </ResourceCard>
-
-      <div className="mt-4">
-        <ResourceCard>
-          <p className="font-medium">Widget URL สำหรับ OBS</p>
-          <p className="mt-1 break-all text-sm text-slate-400">{widgetUrl || "กำลังโหลด URL"}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-950 disabled:opacity-50"
-              disabled={busy || !widgetUrl}
-              onClick={() => void copyWidgetUrl()}
-              type="button"
-            >
-              คัดลอก Widget URL
-            </button>
-            {widgetUrl ? (
-              <a className="rounded-md border border-slate-800 px-3 py-2 text-sm" href={`${widgetUrl}?debug=1`} rel="noreferrer" target="_blank">
-                Preview Widget
-              </a>
-            ) : null}
-          </div>
-        </ResourceCard>
+      <div className="mb-4 space-y-3">
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        {message ? <Notice tone="success">{message}</Notice> : null}
       </div>
 
-      {widgetUrl && widget ? (
-        <div className="mt-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="space-y-4">
           <ResourceCard>
-            <p className="font-medium mb-3">Live Preview</p>
-            <div 
-              className="relative overflow-auto rounded-md border border-slate-800 bg-slate-950"
+            <div className="mb-5">
+              <p className="font-medium text-white">{widget?.name ?? "กำลังโหลด"}</p>
+              <p className="mt-1 text-sm text-slate-400">
+                {widget ? `${widget.type} · ${widget.overlay?.name ?? "ยังไม่ผูก Overlay"}` : "กำลังโหลดข้อมูล Widget"}
+              </p>
+            </div>
+
+            <form className="grid gap-4 lg:grid-cols-2" onSubmit={(event) => void saveLayout(event)}>
+              <Field label="ชื่อ Widget">
+                <Input disabled={busy || !widget} onChange={(event) => setDraftName(event.target.value)} value={draftName} />
+              </Field>
+              <Field label="Overlay">
+                <Select disabled={busy || !widget} onChange={(event) => setDraftOverlayId(event.target.value)} value={draftOverlayId}>
+                  <option value="">ยังไม่ผูก Overlay</option>
+                  {overlays.map((overlay) => (
+                    <option key={overlay.id} value={overlay.id}>{overlay.name}</option>
+                  ))}
+                </Select>
+              </Field>
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-5">
+                <NumberField disabled={busy || !widget} label="X" onChange={setPositionX} value={positionX} />
+                <NumberField disabled={busy || !widget} label="Y" onChange={setPositionY} value={positionY} />
+                <NumberField disabled={busy || !widget} label="กว้าง" min={1} onChange={setWidth} value={width} />
+                <NumberField disabled={busy || !widget} label="สูง" min={1} onChange={setHeight} value={height} />
+                <NumberField disabled={busy || !widget} label="Layer" onChange={setZIndex} value={zIndex} />
+              </div>
+
+              <div className="flex flex-wrap gap-2 lg:col-span-2">
+                <Button disabled={busy || !widget} type="submit">บันทึกข้อมูลหลัก</Button>
+                <Button variant="secondary" disabled={busy || !widget} onClick={() => widget && void updateWidget({ isEnabled: !widget.isEnabled }, widget.isEnabled ? "ปิดใช้งาน Widget แล้ว" : "เปิดใช้งาน Widget แล้ว")} type="button">
+                  {widget?.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                </Button>
+                <Button variant="secondary" disabled={busy || !widget} onClick={() => widget && void updateWidget({ visibility: !widget.visibility }, widget.visibility ? "ซ่อน Widget แล้ว" : "แสดง Widget แล้ว")} type="button">
+                  {widget?.visibility ? "ซ่อนบน Overlay" : "แสดงบน Overlay"}
+                </Button>
+                <Button variant="secondary" disabled={busy || !widget} onClick={() => void testTrigger()} type="button">Test Trigger</Button>
+              </div>
+            </form>
+          </ResourceCard>
+
+          {isChatWidget ? (
+            <ChatWidgetSettings busy={busy} draft={chatDraft} onDraftChange={setChatDraft} onReset={() => setChatDraft(chatSettingsFromConfig({}))} onSave={saveChatSettings} />
+          ) : null}
+
+          <ResourceCard>
+            <p className="font-medium text-white">Widget URL สำหรับ OBS</p>
+            <p className="mt-2 break-all rounded-md bg-slate-950/70 px-3 py-2 text-sm text-slate-400">{widgetUrl || "กำลังโหลด URL"}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" disabled={busy || !widgetUrl} onClick={() => void copyWidgetUrl()} type="button">คัดลอก Widget URL</Button>
+              {widgetUrl ? (
+                <Button size="sm" variant="ghost" asChild>
+                  <a href={`${widgetUrl}?debug=1`} rel="noreferrer" target="_blank">เปิด Preview แยก</a>
+                </Button>
+              ) : null}
+            </div>
+          </ResourceCard>
+
+          <ResourceCard>
+            <p className="font-medium text-white">การจัดการ</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="destructive" disabled={busy || !widget} onClick={() => void deleteWidget()} type="button">ลบ Widget</Button>
+            </div>
+          </ResourceCard>
+        </div>
+
+        <aside className="sticky top-32 self-start">
+          <ResourceCard>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-white">Live Preview</p>
+                <p className="mt-1 text-xs text-slate-500">อัปเดตทันทีระหว่างปรับค่า</p>
+              </div>
+              <Badge tone="info">{Math.max(1, width || 0)} x {Math.max(1, height || 0)}</Badge>
+            </div>
+            <div
+              className="relative overflow-auto rounded-lg border border-slate-800 bg-slate-950"
               style={{
-                backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`,
-                maxHeight: '500px',
+                backgroundImage:
+                  `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`,
+                maxHeight: "70vh"
               }}
             >
-              <iframe
-                src={`${widgetUrl}`}
-                style={{ width: width || 400, height: height || 160, border: 'none', display: 'block' }}
-                title="Widget Preview"
-              />
+              <div className="relative" style={{ width: Math.max(1, width || 400), height: Math.max(1, height || 160) }}>
+                {previewWidget ? <WidgetRenderer widget={previewWidget} chatMessages={isChatWidget ? chatPreviewMessages : []} /> : null}
+              </div>
             </div>
           </ResourceCard>
-        </div>
-      ) : null}
-
-      {widget?.type === "CHAT_WIDGET" ? (
-        <div className="mt-4">
-          <ResourceCard>
-            <p className="mb-3 font-medium">Chat Widget</p>
-            <label className="flex max-w-xl items-center justify-between gap-3 text-sm text-slate-300">
-              <span>แสดงโลโก้แหล่งที่มาของแชท</span>
-              <input
-                checked={showPlatformLogo}
-                className="h-4 w-4"
-                disabled={busy}
-                onChange={(event) => void updateConfig({ showPlatformLogo: event.target.checked })}
-                type="checkbox"
-              />
-            </label>
-          </ResourceCard>
-        </div>
-      ) : null}
-
-      <div className="mt-4">
-        <ResourceCard>
-          <p className="font-medium">การจัดการ</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="rounded-md border border-rose-800 px-3 py-2 text-sm text-rose-400 hover:bg-rose-950 disabled:opacity-50"
-              disabled={busy || !widget}
-              onClick={() => void deleteWidget()}
-              type="button"
-            >
-              ลบ Widget
-            </button>
-          </div>
-        </ResourceCard>
+        </aside>
       </div>
     </DashboardShell>
   );
 }
 
-function NumberField({
-  disabled,
-  label,
-  min,
-  onChange,
-  value,
-}: {
-  disabled: boolean;
-  label: string;
-  min?: number;
-  onChange: (value: number) => void;
-  value: number;
-}) {
+function NumberField({ disabled, label, min, onChange, value }: { disabled: boolean; label: string; min?: number; onChange: (value: number) => void; value: number }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-200">{label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"
-        disabled={disabled}
-        min={min}
-        onChange={(event) => onChange(Number(event.target.value))}
-        type="number"
-        value={value}
-      />
+    <Field label={label}>
+      <Input disabled={disabled} min={min} onChange={(event) => onChange(Number(event.target.value))} type="number" value={value} />
+    </Field>
+  );
+}
+
+function ChatWidgetSettings({
+  busy,
+  draft,
+  onDraftChange,
+  onReset,
+  onSave
+}: {
+  busy: boolean;
+  draft: ChatSettingsDraft;
+  onDraftChange: (draft: ChatSettingsDraft) => void;
+  onReset: () => void;
+  onSave: () => Promise<void>;
+}) {
+  function setValue<K extends keyof ChatSettingsDraft>(key: K, value: ChatSettingsDraft[K]) {
+    onDraftChange({ ...draft, [key]: value });
+  }
+
+  return (
+    <ResourceCard>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-medium text-white">ปรับแต่ง Chat Widget</p>
+          <p className="mt-1 text-sm leading-6 text-slate-400">ตั้งค่าที่ใช้บ่อยอยู่ด้านบน ส่วนสีและขนาดอยู่ในหมวดถัดไป</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy} onClick={() => void onSave()} type="button">บันทึก Chat</Button>
+          <Button disabled={busy} onClick={onReset} type="button" variant="secondary">รีเซ็ต</Button>
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        <SettingsSection title="หลัก">
+          <div className="grid gap-4 lg:grid-cols-4">
+            <NumberField disabled={busy} label="จำนวนข้อความ" min={1} onChange={(value) => setValue("maxMessages", value)} value={draft.maxMessages} />
+            <Field label="เรียงข้อความ">
+              <Select disabled={busy} value={draft.order} onChange={(event) => setValue("order", event.target.value)}>
+                <option value="newest-bottom">ข้อความใหม่อยู่ล่าง</option>
+                <option value="newest-top">ข้อความใหม่อยู่บน</option>
+              </Select>
+            </Field>
+            <Field label="จัดแนว">
+              <Select disabled={busy} value={draft.align} onChange={(event) => setValue("align", event.target.value)}>
+                <option value="left">ซ้าย</option>
+                <option value="right">ขวา</option>
+              </Select>
+            </Field>
+            <Field label="สไตล์กล่อง">
+              <Select disabled={busy} value={draft.bubbleStyle} onChange={(event) => setValue("bubbleStyle", event.target.value)}>
+                <option value="glass">Glass</option>
+                <option value="solid">Solid</option>
+                <option value="outline">Outline</option>
+                <option value="minimal">Minimal</option>
+              </Select>
+            </Field>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="การแสดงผล">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ToggleField disabled={busy} label="Avatar" checked={draft.showAvatar} onChange={(value) => setValue("showAvatar", value)} />
+            <ToggleField disabled={busy} label="ชื่อผู้ส่ง" checked={draft.showName} onChange={(value) => setValue("showName", value)} />
+            <ToggleField disabled={busy} label="โลโก้แพลตฟอร์ม" checked={draft.showPlatformLogo} onChange={(value) => setValue("showPlatformLogo", value)} />
+            <ToggleField disabled={busy} label="ข้อความรอแชท" checked={draft.showEmptyState} onChange={(value) => setValue("showEmptyState", value)} />
+            <ToggleField disabled={busy} label="Animation" checked={draft.animateMessages} onChange={(value) => setValue("animateMessages", value)} />
+            <ToggleField disabled={busy} label="Compact mode" checked={draft.compactMode} onChange={(value) => setValue("compactMode", value)} />
+            <ToggleField disabled={busy} label="เงาตัวอักษร" checked={draft.textShadow} onChange={(value) => setValue("textShadow", value)} />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="สี">
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            <ColorField disabled={busy} label="พื้นหลัง" value={draft.backgroundColor} onChange={(value) => setValue("backgroundColor", value)} />
+            <ColorField disabled={busy} label="กล่องข้อความ" value={draft.bubbleColor} onChange={(value) => setValue("bubbleColor", value)} />
+            <ColorField disabled={busy} label="ข้อความ" value={draft.textColor} onChange={(value) => setValue("textColor", value)} />
+            <ColorField disabled={busy} label="ชื่อ TikTok" value={draft.tiktokNameColor} onChange={(value) => setValue("tiktokNameColor", value)} />
+            <ColorField disabled={busy} label="ชื่อ YouTube" value={draft.youtubeNameColor} onChange={(value) => setValue("youtubeNameColor", value)} />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection title="ขนาดและระยะห่าง">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <RangeField disabled={busy} label="Opacity พื้นหลัง" min={0} max={1} step={0.05} value={draft.backgroundOpacity} onChange={(value) => setValue("backgroundOpacity", value)} />
+            <RangeField disabled={busy} label="Opacity กล่อง" min={0} max={1} step={0.05} value={draft.bubbleOpacity} onChange={(value) => setValue("bubbleOpacity", value)} />
+            <RangeField disabled={busy} label="Opacity เส้นขอบ" min={0} max={1} step={0.05} value={draft.borderOpacity} onChange={(value) => setValue("borderOpacity", value)} />
+            <RangeField disabled={busy} label="ข้อความ" min={10} max={36} step={1} value={draft.fontSize} onChange={(value) => setValue("fontSize", value)} />
+            <RangeField disabled={busy} label="ชื่อ" min={10} max={28} step={1} value={draft.nameFontSize} onChange={(value) => setValue("nameFontSize", value)} />
+            <RangeField disabled={busy} label="Avatar" min={18} max={80} step={1} value={draft.avatarSize} onChange={(value) => setValue("avatarSize", value)} />
+            <RangeField disabled={busy} label="Padding Widget" min={0} max={40} step={1} value={draft.padding} onChange={(value) => setValue("padding", value)} />
+            <RangeField disabled={busy} label="ระยะห่างข้อความ" min={0} max={28} step={1} value={draft.gap} onChange={(value) => setValue("gap", value)} />
+            <RangeField disabled={busy} label="มุมกล่อง" min={0} max={32} step={1} value={draft.borderRadius} onChange={(value) => setValue("borderRadius", value)} />
+            <RangeField disabled={busy} label="Padding แนวนอน" min={4} max={32} step={1} value={draft.messagePaddingX} onChange={(value) => setValue("messagePaddingX", value)} />
+            <RangeField disabled={busy} label="Padding แนวตั้ง" min={2} max={24} step={1} value={draft.messagePaddingY} onChange={(value) => setValue("messagePaddingY", value)} />
+          </div>
+        </SettingsSection>
+      </div>
+    </ResourceCard>
+  );
+}
+
+function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <section>
+      <p className="mb-3 text-sm font-medium text-slate-200">{title}</p>
+      {children}
+    </section>
+  );
+}
+
+function ToggleField({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (value: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-300">
+      <span>{label}</span>
+      <input checked={checked} className="h-4 w-4 accent-indigo-500" disabled={disabled} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
+  );
+}
+
+function ColorField({ disabled, label, onChange, value }: { disabled: boolean; label: string; onChange: (value: string) => void; value: string }) {
+  return (
+    <Field label={label}>
+      <div className="flex min-w-0 gap-2">
+        <input
+          className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-slate-700 bg-slate-950 p-1 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          type="color"
+          value={value}
+        />
+        <Input className="min-w-0 font-mono" disabled={disabled} onChange={(event) => onChange(event.target.value)} value={value} />
+      </div>
+    </Field>
+  );
+}
+
+function RangeField({ disabled, label, max, min, onChange, step, value }: { disabled: boolean; label: string; max: number; min: number; onChange: (value: number) => void; step: number; value: number }) {
+  return (
+    <Field label={`${label}: ${value}`}>
+      <Input disabled={disabled} max={max} min={min} onChange={(event) => onChange(Number(event.target.value))} step={step} type="range" value={value} />
+    </Field>
   );
 }

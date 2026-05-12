@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
-import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName } from "@ezstream/shared";
+import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName, sanitizeTtsText } from "@ezstream/shared";
 import { WidgetType } from "@prisma/client";
 import { IsNumber, IsOptional, IsString, Max, MaxLength, Min, IsNotEmpty } from "class-validator";
 import { CurrentUser, type AuthUser } from "../common/current-user.decorator.js";
@@ -76,7 +76,7 @@ export class TtsController {
       throw new BadRequestException("Create or select an enabled TTS widget before testing TTS");
     }
 
-    const text = dto.text.trim();
+    const text = sanitizeTtsText(dto.text);
     if (!text) {
       throw new BadRequestException("TTS text is required");
     }

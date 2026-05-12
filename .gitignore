@@ -49,5 +49,7 @@ coverage
 
 # Tools
 .serena
+.agents/
+skills-lock.json
 .turbo
 .nx/cache

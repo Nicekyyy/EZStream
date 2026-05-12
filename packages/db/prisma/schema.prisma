@@ -122,7 +122,7 @@ model Overlay {
 model Widget {
   id         String     @id @default(cuid())
   creatorId  String
-  overlayId  String
+  overlayId  String?
   type       WidgetType
   name       String
   isEnabled  Boolean    @default(true)
@@ -137,7 +137,7 @@ model Widget {
   updatedAt  DateTime   @updatedAt
 
   creator       Creator        @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-  overlay       Overlay        @relation(fields: [overlayId], references: [id], onDelete: Cascade)
+  overlay       Overlay?       @relation(fields: [overlayId], references: [id], onDelete: SetNull)
   state         WidgetState?
   actions       WidgetAction[]
   ttsJobs       TtsJob[]

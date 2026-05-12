@@ -1,8 +1,10 @@
 "use client";
 
+import { Button } from "@ezstream/ui";
 import { FormEvent, useEffect, useState } from "react";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
+import { EmptyState, Field, Input, LoadingCards, Notice } from "../../../components/ui-kit";
 import { api } from "../../../lib/api";
 
 type Rule = { id: string; name: string; eventType: string; conditions: unknown; actions: unknown };
@@ -14,15 +16,22 @@ export default function RulesPage() {
   const [deletingId, setDeletingId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setRules(await api<Rule[]>("/rules"));
   }
 
-  useEffect(() => void load().catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลด Rule ไม่สำเร็จ")), []);
+  useEffect(() => {
+    void load()
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลด Rule ไม่สำเร็จ"))
+      .finally(() => setLoading(false));
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    setSubmitting(true);
     setMessage("");
     setError("");
     try {
@@ -45,6 +54,8 @@ export default function RulesPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "สร้าง Rule ไม่สำเร็จ");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -66,35 +77,52 @@ export default function RulesPage() {
 
   return (
     <DashboardShell title="Rules">
-      <form onSubmit={submit} className="mb-4 grid gap-2 rounded-md border border-slate-800 bg-slate-900 p-4 md:grid-cols-[1fr_1fr_auto]">
-        <input className="rounded-md border border-slate-800 px-3 py-2" value={name} onChange={(event) => setName(event.target.value)} />
-        <input className="rounded-md border border-slate-800 px-3 py-2" value={eventType} onChange={(event) => setEventType(event.target.value)} />
-        <button className="rounded-md bg-slate-950 px-4 py-2 text-white">สร้าง Rule</button>
-      </form>
+      <ResourceCard className="mb-5">
+        <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <Field label="ชื่อ Rule">
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </Field>
+          <Field label="Event type">
+            <Input value={eventType} onChange={(event) => setEventType(event.target.value)} />
+          </Field>
+          <Button disabled={submitting || !name.trim() || !eventType.trim()} type="submit">
+            {submitting ? "กำลังสร้าง..." : "สร้าง Rule"}
+          </Button>
+        </form>
+      </ResourceCard>
 
-      {message ? <p className="mb-3 text-sm text-emerald-400">{message}</p> : null}
-      {error ? <p className="mb-3 text-sm text-rose-400">{error}</p> : null}
-
-      <div className="grid gap-3">
-        {rules.map((rule) => (
-          <ResourceCard key={rule.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-medium">{rule.name}</p>
-                <p className="text-sm text-slate-400">{rule.eventType}</p>
-              </div>
-              <button
-                className="rounded-md border border-rose-800 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-950 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={deletingId === rule.id}
-                onClick={() => void deleteRule(rule)}
-                type="button"
-              >
-                {deletingId === rule.id ? "กำลังลบ..." : "ลบ"}
-              </button>
-            </div>
-          </ResourceCard>
-        ))}
+      <div className="mb-4 space-y-3">
+        {message ? <Notice tone="success">{message}</Notice> : null}
+        {error ? <Notice tone="error">{error}</Notice> : null}
       </div>
+
+      {loading ? (
+        <LoadingCards />
+      ) : rules.length ? (
+        <div className="grid gap-3">
+          {rules.map((rule) => (
+            <ResourceCard key={rule.id}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-medium text-white">{rule.name}</p>
+                  <p className="mt-1 text-sm text-slate-400">{rule.eventType}</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deletingId === rule.id}
+                  onClick={() => void deleteRule(rule)}
+                  type="button"
+                >
+                  {deletingId === rule.id ? "กำลังลบ..." : "ลบ"}
+                </Button>
+              </div>
+            </ResourceCard>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="ยังไม่มี Rule" description="สร้าง rule เพื่อให้ event จาก live stream ไป trigger widget หรือ TTS โดยอัตโนมัติ" />
+      )}
     </DashboardShell>
   );
 }

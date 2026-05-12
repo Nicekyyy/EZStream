@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
+import { renderChatMessageText } from "../../../components/widget-renderer";
 import { API_URL, api } from "../../../lib/api";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 
@@ -255,12 +256,12 @@ export default function ChatPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-target">
-                  {platform === "TIKTOK" ? "TikTok Username (เช่น @username)" : "YouTube Channel (เช่น @channelhandle)"}
+                  {platform === "TIKTOK" ? "TikTok Username (เช่น @username)" : "YouTube Channel (ชื่อช่อง, @handle, URL หรือ Video ID)"}
                 </label>
                 <input
                   id="chat-target"
                   className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white"
-                  placeholder={platform === "TIKTOK" ? "@tiktokuser" : "@youtubechannel"}
+                  placeholder={platform === "TIKTOK" ? "@tiktokuser" : "เช่น WorkpointOfficial หรือ @channelhandle"}
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                 />
@@ -356,7 +357,7 @@ export default function ChatPage() {
                             {msg.displayName}
                           </span>
                         </div>
-                        <p className="text-sm text-slate-200 break-words">{msg.message}</p>
+                        <p className="break-words text-sm text-slate-200">{renderChatMessageText(msg.message)}</p>
                       </div>
                     </div>
                   ))
