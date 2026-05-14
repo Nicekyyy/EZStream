@@ -577,6 +577,7 @@ async function triggerChatRules(chatSourceId: string, message: UnifiedChatMessag
 
 type ChatConnection = { connectionId: string; disconnect: () => void | Promise<void> };
 const activeChats = new Map<string, ChatConnection>();
+let youtubeParserErrorHandlerInstalled = false;
 
 function isActiveChatConnection(chatSourceId: string, connectionId: string) {
   return activeChats.get(chatSourceId)?.connectionId === connectionId;
@@ -584,6 +585,20 @@ function isActiveChatConnection(chatSourceId: string, connectionId: string) {
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function installYouTubeParserErrorHandler(Parser: { setParserErrorHandler: (handler: (error: any) => void) => void }) {
+  if (youtubeParserErrorHandlerInstalled) return;
+  youtubeParserErrorHandlerInstalled = true;
+
+  Parser.setParserErrorHandler((error: any) => {
+    if (error?.error_type === "typecheck" && error?.classname === "HypeFanCreditsSectionView") return;
+
+    const errorType = typeof error?.error_type === "string" ? error.error_type : "unknown";
+    const classname = typeof error?.classname === "string" ? error.classname : "unknown";
+    const cause = error?.error instanceof Error ? `: ${error.error.message}` : "";
+    console.warn(`[chat] YouTube parser warning (${errorType}/${classname})${cause}`);
+  });
 }
 
 function normalizeAvatarUrl(url: unknown) {
@@ -825,7 +840,8 @@ async function connectTikTok(chatSourceId: string, target: string, overlayToken:
 async function connectYouTube(chatSourceId: string, target: string, overlayToken: string) {
   try {
     const connectionId = Math.random().toString(36).slice(2);
-    const { Innertube } = await import("youtubei.js");
+    const { Innertube, Parser } = await import("youtubei.js");
+    installYouTubeParserErrorHandler(Parser);
     const yt = await Innertube.create();
 
     let liveVideoId: string | null = null;
@@ -877,12 +893,23 @@ async function connectYouTube(chatSourceId: string, target: string, overlayToken
       if (!liveVideoId) liveVideoId = await findLiveVideoIdBySearch(normalizedTarget);
     }
 
-    if (!liveVideoId) throw new Error(`เนเธกเนเธเธเนเธฅเธเนเธชเธ•เธฃเธตเธกเธ—เธตเนเธเธณเธฅเธฑเธเธญเธญเธเธญเธฒเธเธฒเธจเธชเธณเธซเธฃเธฑเธ: ${target} (เธ–เนเธฒเนเธฅเธเนเธญเธขเธนเน เนเธเธฐเธเธณเนเธซเนเนเธชเน URL เธเธญเธเนเธฅเธเนเนเธ”เธขเธ•เธฃเธ)`);
+    if (!liveVideoId) throw new Error(`ไม่พบไลฟ์สตรีมที่กำลังออกอากาศสำหรับ: ${target} (ถ้าไลฟ์อยู่ แนะนำให้ใส่ URL ของไลฟ์โดยตรง)`);
 
     const videoInfo = await yt.getInfo(liveVideoId);
-    if (!videoInfo.basic_info.is_live) throw new Error(`เธงเธดเธ”เธตเนเธญเธเธตเนเนเธกเนเนเธ”เนเธเธณเธฅเธฑเธเนเธฅเธเนเธญเธขเธนเน: ${liveVideoId}`);
-    
-    const livechat = videoInfo.getLiveChat();
+    let livechat: ReturnType<typeof videoInfo.getLiveChat>;
+    try {
+      livechat = videoInfo.getLiveChat();
+    } catch (error) {
+      const isLiveLike = videoInfo.basic_info.is_live || videoInfo.basic_info.is_live_content || videoInfo.basic_info.is_upcoming;
+      if (!isLiveLike) throw new Error(`วิดีโอนี้ไม่ได้กำลังไลฟ์อยู่: ${liveVideoId}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`ไม่สามารถเปิด YouTube Live Chat ได้: ${msg}`);
+    }
+
+    if (!videoInfo.basic_info.is_live) {
+      console.warn(`[chat] YouTube live status was not marked live by basic_info, continuing because live chat is available: ${liveVideoId}`);
+    }
+
     activeChats.set(chatSourceId, { connectionId, disconnect: () => livechat.stop() });
 
     console.log(`[chat] YouTube connected: ${target} (video: ${liveVideoId}, ${connectionId})`);
