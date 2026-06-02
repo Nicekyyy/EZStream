@@ -188,15 +188,203 @@ async function synthesizeGoogleTts(job: { id: string; text: string; voice: strin
         pitch: (job.pitch - 1) * 10
       }
     })
+import { defaultGoogleTtsVoiceName, googleTtsVoiceLanguageCode, resolveGoogleTtsVoiceName, sanitizeTtsText, CHAT_COMMANDS_CHANNEL, REALTIME_CHANNEL } from "@ezstream/shared";
+import type { UnifiedChatMessage } from "@ezstream/shared";
+import { Prisma, PrismaClient, TtsJobStatus, WidgetActionStatus, type Rule } from "@prisma/client";
+import { Queue, Worker } from "bullmq";
+import { Redis } from "ioredis";
+import { createSign } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+const redisUrl = process.env.REDIS_URL ?? "redis://localhost:56379";
+const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 5);
+const storageRoot = resolve(process.env.LOCAL_STORAGE_ROOT ?? "./storage");
+const apiPublicUrl = (process.env.API_PUBLIC_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`).replace(/\/$/, "");
+const googleTtsVoice = resolveGoogleTtsVoiceName(process.env.GOOGLE_TTS_VOICE, defaultGoogleTtsVoiceName);
+const googleTtsEndpoint = "https://texttospeech.googleapis.com/v1/text:synthesize";
+const prisma = new PrismaClient();
+const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+const ttsJobsQueue = new Queue("tts-jobs", { connection });
+const widgetActionsQueue = new Queue("widget-actions", { connection });
+const lastTtsByCreator = new Map<string, number>();
+let googleAccessToken: { token: string; expiresAt: number } | undefined;
+
+function sanitizeText(text: string, bannedWords: string[]) {
+  const normalized = text.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return bannedWords.reduce((value, word) => {
+    if (!word) return value;
+    return value.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "***");
+  }, normalized);
+}
+
+function creatorBannedWords(settings: unknown) {
+  if (settings && typeof settings === "object" && Array.isArray((settings as { bannedWords?: unknown }).bannedWords)) {
+    return (settings as { bannedWords: unknown[] }).bannedWords.filter((word): word is string => typeof word === "string");
+  }
+  return [];
+}
+
+function creatorCooldownMs(settings: unknown) {
+  if (settings && typeof settings === "object") {
+    const value = (settings as { ttsCooldownMs?: unknown }).ttsCooldownMs;
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  }
+  return 0;
+}
+
+type Condition = {
+  field: string;
+  operator: string;
+  value?: unknown;
+};
+
+type RuleAction = {
+  type: string;
+  widgetId?: string;
+  textTemplate?: string;
+  amountTemplate?: string;
+  [key: string]: unknown;
+};
+
+function getPathValue(payload: Record<string, unknown>, path: string) {
+  return path.split(".").reduce<unknown>((value, key) => {
+    if (value && typeof value === "object" && key in value) {
+      return (value as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, payload);
+}
+
+function compareNumber(left: unknown, right: unknown, comparer: (a: number, b: number) => boolean) {
+  const a = Number(left);
+  const b = Number(right);
+  return Number.isFinite(a) && Number.isFinite(b) && comparer(a, b);
+}
+
+function matchesCondition(payload: Record<string, unknown>, condition: Condition) {
+  const actual = getPathValue(payload, condition.field);
+  const expected = condition.value;
+
+  switch (condition.operator) {
+    case "equals":
+      return actual === expected;
+    case "notEquals":
+      return actual !== expected;
+    case "contains":
+      return String(actual ?? "").includes(String(expected ?? ""));
+    case "notContains":
+      return !String(actual ?? "").includes(String(expected ?? ""));
+    case "greaterThan":
+      return compareNumber(actual, expected, (a, b) => a > b);
+    case "greaterThanOrEqual":
+      return compareNumber(actual, expected, (a, b) => a >= b);
+    case "lessThan":
+      return compareNumber(actual, expected, (a, b) => a < b);
+    case "lessThanOrEqual":
+      return compareNumber(actual, expected, (a, b) => a <= b);
+    case "exists":
+      return actual !== undefined && actual !== null;
+    case "in":
+      return Array.isArray(expected) && expected.includes(actual);
+    default:
+      return false;
+  }
+}
+
+function renderTemplate(template: string, payload: Record<string, unknown>) {
+  return template.replace(/\{([a-zA-Z0-9_.]+)\}/g, (_match, path: string) => {
+    const value = getPathValue(payload, path);
+    return value === undefined || value === null ? "" : String(value);
+  });
+}
+
+function jsonArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function jsonObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function base64Url(value: string) {
+  return Buffer.from(value).toString("base64url");
+}
+
+async function googleServiceAccount() {
+  const raw = process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON ?? (process.env.GOOGLE_APPLICATION_CREDENTIALS ? await readFile(process.env.GOOGLE_APPLICATION_CREDENTIALS, "utf8") : undefined);
+  if (!raw) {
+    throw new Error("Google Cloud TTS credentials are missing. Set GOOGLE_TTS_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS.");
+  }
+  const parsed = JSON.parse(raw) as { client_email?: string; private_key?: string };
+  if (!parsed.client_email || !parsed.private_key) {
+    throw new Error("Google Cloud TTS service account must include client_email and private_key.");
+  }
+  return { clientEmail: parsed.client_email, privateKey: parsed.private_key };
+}
+
+async function googleAuthToken() {
+  const staticToken = process.env.GOOGLE_TTS_ACCESS_TOKEN;
+  if (staticToken) return staticToken;
+  if (googleAccessToken && googleAccessToken.expiresAt > Date.now() + 60_000) return googleAccessToken.token;
+
+  const serviceAccount = await googleServiceAccount();
+  const now = Math.floor(Date.now() / 1000);
+  const unsignedJwt = `${base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64Url(
+    JSON.stringify({
+      iss: serviceAccount.clientEmail,
+      scope: "https://www.googleapis.com/auth/cloud-platform",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: now,
+      exp: now + 3600
+    })
+  )}`;
+  const signature = createSign("RSA-SHA256").update(unsignedJwt).sign(serviceAccount.privateKey, "base64url");
+  const assertion = `${unsignedJwt}.${signature}`;
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion })
+  });
+  const body = (await response.json()) as { access_token?: string; expires_in?: number; error_description?: string; error?: string };
+  if (!response.ok || !body.access_token) {
+    throw new Error(body.error_description ?? body.error ?? `Google auth failed: ${response.status}`);
+  }
+  googleAccessToken = { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000 };
+  return body.access_token;
+}
+
+function googleVoiceName(voice: string) {
+  return voice === "default" || voice === "female" ? googleTtsVoice : resolveGoogleTtsVoiceName(voice, googleTtsVoice);
+}
+
+async function synthesizeGoogleTts(job: { id: string; text: string; voice: string; speed: number; pitch: number }) {
+  const token = await googleAuthToken();
+  const voiceName = googleVoiceName(job.voice);
+  const languageCode = googleTtsVoiceLanguageCode(voiceName);
+  const response = await fetch(googleTtsEndpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json; charset=utf-8"
+    },
+    body: JSON.stringify({
+      input: { text: job.text },
+      voice: { languageCode, name: voiceName },
+      audioConfig: {
+        audioEncoding: "MP3",
+        speakingRate: job.speed,
+        pitch: (job.pitch - 1) * 10
+      }
+    })
   });
   const body = (await response.json()) as { audioContent?: string; error?: { message?: string } };
   if (!response.ok || !body.audioContent) {
     throw new Error(body.error?.message ?? `Google Cloud TTS failed: ${response.status}`);
   }
 
-  const ttsDir = join(storageRoot, "tts");
-  await mkdir(ttsDir, { recursive: true });
-  await writeFile(join(ttsDir, `${job.id}.mp3`), Buffer.from(body.audioContent, "base64"));
+  // We skip writing to disk since we return the Base64 data directly to the client via WebSockets.
 
   return {
     audioUrl: `data:audio/mpeg;base64,${body.audioContent}`,
@@ -367,7 +555,7 @@ async function processTtsJob(ttsJobId: string) {
   return completed;
 }
 
-// โ”€โ”€ Chat Connector Manager โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
+// ─── Chat Connector Manager ──────────────────────────────────────────────────
 
 function ruleMatches(rule: Rule, payload: Record<string, unknown>) {
   const conditions = jsonArray<Condition>(rule.conditions);
@@ -904,128 +1092,6 @@ async function connectYouTube(chatSourceId: string, target: string, overlayToken
       if (!isLiveLike) throw new Error(`วิดีโอนี้ไม่ได้กำลังไลฟ์อยู่: ${liveVideoId}`);
       const msg = error instanceof Error ? error.message : String(error);
       throw new Error(`ไม่สามารถเปิด YouTube Live Chat ได้: ${msg}`);
-    }
-
-    if (!videoInfo.basic_info.is_live) {
-      console.warn(`[chat] YouTube live status was not marked live by basic_info, continuing because live chat is available: ${liveVideoId}`);
-    }
-
-    activeChats.set(chatSourceId, { connectionId, disconnect: () => livechat.stop() });
-
-    console.log(`[chat] YouTube connected: ${target} (video: ${liveVideoId}, ${connectionId})`);
-    await updateChatSourceStatus(chatSourceId, "CONNECTED", overlayToken);
-
-    livechat.on("chat-update", (action: any) => {
-      if (activeChats.get(chatSourceId)?.connectionId !== connectionId) return;
-      if (action?.type !== "AddChatItemAction") return;
-
-      const item = action.item;
-      if (!item || item.type !== "LiveChatTextMessage") return;
-
-      const msgText = youtubeMessageText(item.message);
-      if (!msgText) return;
-
-      const message: UnifiedChatMessage = {
-        id: `youtube-${item.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
-        platform: "youtube",
-        username: item.author?.name ?? "unknown",
-        displayName: item.author?.name ?? "unknown",
-        message: msgText,
-        avatarUrl: normalizeAvatarUrl(item.author?.thumbnails?.[0]?.url),
-        badges: item.author?.badges?.map((b: any) => b?.tooltip ?? b?.label ?? String(b)).filter(Boolean) ?? [],
-        timestamp: item.timestamp ?? Date.now()
-      };
-      void publishChatMessage(chatSourceId, overlayToken, message);
-    });
-
-    livechat.on("end", () => {
-      if (activeChats.get(chatSourceId)?.connectionId !== connectionId) return;
-      console.log(`[chat] YouTube live chat ended: ${target}`);
-      activeChats.delete(chatSourceId);
-      void updateChatSourceStatus(chatSourceId, "DISCONNECTED", overlayToken);
-    });
-
-    livechat.start();
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[chat] YouTube connect error: ${msg}`);
-    await updateChatSourceStatus(chatSourceId, "ERROR", overlayToken, msg);
-  }
-}
-
-async function disconnectChat(chatSourceId: string) {
-  const conn = activeChats.get(chatSourceId);
-  if (conn) {
-    activeChats.delete(chatSourceId);
-    try {
-      await conn.disconnect();
-    } catch (e) {
-      // Ignore disconnect errors
-    }
-    console.log(`[chat] Disconnected: ${chatSourceId} (${conn.connectionId})`);
-  }
-}
-
-async function connectChatSource(chatSourceId: string, platform: string, target: string, overlayToken: string) {
-  await disconnectChat(chatSourceId);
-  if (platform === "TIKTOK") {
-    void connectTikTok(chatSourceId, target, overlayToken);
-  } else if (platform === "YOUTUBE") {
-    void connectYouTube(chatSourceId, target, overlayToken);
-  }
-}
-
-async function reconnectStoredChatSources() {
-  const sources = await prisma.chatSource.findMany({
-    where: {
-      isEnabled: true,
-      status: { in: ["CONNECTED", "CONNECTING"] },
-      overlay: { isActive: true }
-    },
-    include: { overlay: { select: { token: true } } },
-    orderBy: { updatedAt: "asc" }
-  });
-
-  if (!sources.length) return;
-  console.log(`[chat] Reconnecting ${sources.length} stored chat source(s)`);
-  for (const source of sources) {
-    await updateChatSourceStatus(source.id, "CONNECTING", source.overlay.token);
-    await connectChatSource(source.id, source.platform, source.target, source.overlay.token);
-  }
-}
-
-// Subscribe to chat commands from API
-const chatCommandSub = connection.duplicate();
-void chatCommandSub.subscribe(CHAT_COMMANDS_CHANNEL).then(() => {
-  chatCommandSub.on("message", (_channel, raw) => {
-    void (async () => {
-      try {
-        const cmd = JSON.parse(raw) as { action: string; chatSourceId: string; platform: string; target: string; overlayToken?: string };
-        if (cmd.action === "connect" && cmd.overlayToken) {
-          await connectChatSource(cmd.chatSourceId, cmd.platform, cmd.target, cmd.overlayToken);
-        } else if (cmd.action === "disconnect") {
-          await disconnectChat(cmd.chatSourceId);
-        }
-      } catch (error) {
-      console.error("[chat] Invalid command", error);
-      }
-    })();
-  });
-  void reconnectStoredChatSources().catch((error) => {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[chat] Reconnect stored sources failed: ${msg}`);
-  });
-});
-
-console.log("[chat] Chat connector manager ready");
-
-// โ”€โ”€ BullMQ Workers โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
-
-const workers = [
-  new Worker(
-    "live-events",
-    async (job) => {
-      const eventLogId = String(job.data.eventLogId);
       await prisma.eventLog.update({ where: { id: eventLogId }, data: { status: "PROCESSED" } });
     },
     { connection, concurrency }

@@ -4,7 +4,7 @@ import { Button } from "@ezstream/ui";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { io, type Socket } from "socket.io-client";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
@@ -200,6 +200,9 @@ export default function WidgetDetailPage() {
     };
   }, [draftName, height, previewConfig, widget, width, zIndex]);
 
+  const deferredPreviewWidget = useDeferredValue(previewWidget);
+  const deferredChatMessages = useDeferredValue(chatPreviewMessages);
+
   function syncDraft(nextWidget: Widget) {
     setWidget(nextWidget);
     setDraftName(nextWidget.name);
@@ -354,12 +357,12 @@ export default function WidgetDetailPage() {
         {message ? <Notice tone="success">{message}</Notice> : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="flex flex-col-reverse gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-4">
           <ResourceCard>
             <div className="mb-5">
-              <p className="font-medium text-white">{widget?.name ?? "กำลังโหลด"}</p>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="text-2xl font-bold text-white">{widget?.name ?? "กำลังโหลด"}</p>
+              <p className="mt-1 text-sm text-ink-subtle">
                 {widget ? `${widget.type} · ${widget.overlay?.name ?? "ยังไม่ผูก Overlay"}` : "กำลังโหลดข้อมูล Widget"}
               </p>
             </div>
@@ -403,8 +406,8 @@ export default function WidgetDetailPage() {
           ) : null}
 
           <ResourceCard>
-            <p className="font-medium text-white">Widget URL สำหรับ OBS</p>
-            <p className="mt-2 break-all rounded-md bg-slate-950/70 px-3 py-2 text-sm text-slate-400">{widgetUrl || "กำลังโหลด URL"}</p>
+            <p className="text-base font-semibold text-white">Widget URL สำหรับ OBS</p>
+            <p className="mt-2 break-all rounded-none border-2 border-border-base bg-surface-base px-4 py-3 text-sm text-ink-subtle">{widgetUrl || "กำลังโหลด URL"}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" disabled={busy || !widgetUrl} onClick={() => void copyWidgetUrl()} type="button">คัดลอก Widget URL</Button>
               {widgetUrl ? (
@@ -416,32 +419,31 @@ export default function WidgetDetailPage() {
           </ResourceCard>
 
           <ResourceCard>
-            <p className="font-medium text-white">การจัดการ</p>
+            <p className="text-base font-semibold text-white">การจัดการ</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="destructive" disabled={busy || !widget} onClick={() => void deleteWidget()} type="button">ลบ Widget</Button>
             </div>
           </ResourceCard>
         </div>
 
-        <aside className="sticky top-32 self-start">
+        <aside className="sticky top-28 z-20 self-start xl:top-32">
           <ResourceCard>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p className="font-medium text-white">Live Preview</p>
-                <p className="mt-1 text-xs text-slate-500">อัปเดตทันทีระหว่างปรับค่า</p>
+                <p className="text-base font-semibold text-white">Live Preview</p>
+                <p className="mt-1 text-xs font-medium text-ink-subtle">อัปเดตทันทีระหว่างปรับค่า</p>
               </div>
               <Badge tone="info">{Math.max(1, width || 0)} x {Math.max(1, height || 0)}</Badge>
             </div>
             <div
-              className="relative overflow-auto rounded-lg border border-slate-800 bg-slate-950"
+              className="relative overflow-auto rounded-none border-2 border-border-base bg-surface-dark max-h-[40vh] xl:max-h-[70vh]"
               style={{
                 backgroundImage:
-                  `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`,
-                maxHeight: "70vh"
+                  `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`
               }}
             >
               <div className="relative" style={{ width: Math.max(1, width || 400), height: Math.max(1, height || 160) }}>
-                {previewWidget ? <WidgetRenderer widget={previewWidget} chatMessages={isChatWidget ? chatPreviewMessages : []} /> : null}
+                {deferredPreviewWidget ? <WidgetRenderer widget={deferredPreviewWidget} chatMessages={isChatWidget ? deferredChatMessages : []} /> : null}
               </div>
             </div>
           </ResourceCard>
@@ -472,6 +474,8 @@ function ChatWidgetSettings({
   onReset: () => void;
   onSave: () => Promise<void>;
 }) {
+  const [activeTab, setActiveTab] = useState<"core" | "display" | "colors" | "spacing">("core");
+
   function setValue<K extends keyof ChatSettingsDraft>(key: K, value: ChatSettingsDraft[K]) {
     onDraftChange({ ...draft, [key]: value });
   }
@@ -480,8 +484,8 @@ function ChatWidgetSettings({
     <ResourceCard>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-medium text-white">ปรับแต่ง Chat Widget</p>
-          <p className="mt-1 text-sm leading-6 text-slate-400">ตั้งค่าที่ใช้บ่อยอยู่ด้านบน ส่วนสีและขนาดอยู่ในหมวดถัดไป</p>
+          <p className="text-base font-semibold text-white">ปรับแต่ง Chat Widget</p>
+          <p className="mt-1 text-xs font-medium text-ink-subtle">เลือกหมวดหมู่ที่ต้องการตั้งค่าด้านล่าง</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button disabled={busy} onClick={() => void onSave()} type="button">บันทึก Chat</Button>
@@ -489,79 +493,110 @@ function ChatWidgetSettings({
         </div>
       </div>
 
-      <div className="space-y-5">
-        <SettingsSection title="หลัก">
-          <div className="grid gap-4 lg:grid-cols-4">
-            <NumberField disabled={busy} label="จำนวนข้อความ" min={1} onChange={(value) => setValue("maxMessages", value)} value={draft.maxMessages} />
-            <Field label="เรียงข้อความ">
-              <Select disabled={busy} value={draft.order} onChange={(event) => setValue("order", event.target.value)}>
-                <option value="newest-bottom">ข้อความใหม่อยู่ล่าง</option>
-                <option value="newest-top">ข้อความใหม่อยู่บน</option>
-              </Select>
-            </Field>
-            <Field label="จัดแนว">
-              <Select disabled={busy} value={draft.align} onChange={(event) => setValue("align", event.target.value)}>
-                <option value="left">ซ้าย</option>
-                <option value="right">ขวา</option>
-              </Select>
-            </Field>
-            <Field label="สไตล์กล่อง">
-              <Select disabled={busy} value={draft.bubbleStyle} onChange={(event) => setValue("bubbleStyle", event.target.value)}>
-                <option value="glass">Glass</option>
-                <option value="solid">Solid</option>
-                <option value="outline">Outline</option>
-                <option value="minimal">Minimal</option>
-              </Select>
-            </Field>
-          </div>
-        </SettingsSection>
+      <div className="mb-6 flex flex-wrap gap-2 border-b-2 border-border-base pb-4">
+        <TabButton active={activeTab === "core"} onClick={() => setActiveTab("core")}>หลัก</TabButton>
+        <TabButton active={activeTab === "display"} onClick={() => setActiveTab("display")}>การแสดงผล</TabButton>
+        <TabButton active={activeTab === "colors"} onClick={() => setActiveTab("colors")}>สี</TabButton>
+        <TabButton active={activeTab === "spacing"} onClick={() => setActiveTab("spacing")}>ขนาดและระยะห่าง</TabButton>
+      </div>
 
-        <SettingsSection title="การแสดงผล">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <ToggleField disabled={busy} label="Avatar" checked={draft.showAvatar} onChange={(value) => setValue("showAvatar", value)} />
-            <ToggleField disabled={busy} label="ชื่อผู้ส่ง" checked={draft.showName} onChange={(value) => setValue("showName", value)} />
-            <ToggleField disabled={busy} label="โลโก้แพลตฟอร์ม" checked={draft.showPlatformLogo} onChange={(value) => setValue("showPlatformLogo", value)} />
-            <ToggleField disabled={busy} label="ข้อความรอแชท" checked={draft.showEmptyState} onChange={(value) => setValue("showEmptyState", value)} />
-            <ToggleField disabled={busy} label="Animation" checked={draft.animateMessages} onChange={(value) => setValue("animateMessages", value)} />
-            <ToggleField disabled={busy} label="Compact mode" checked={draft.compactMode} onChange={(value) => setValue("compactMode", value)} />
-            <ToggleField disabled={busy} label="เงาตัวอักษร" checked={draft.textShadow} onChange={(value) => setValue("textShadow", value)} />
-          </div>
-        </SettingsSection>
+      <div className="min-h-[380px] space-y-5">
+        {activeTab === "core" ? (
+          <SettingsSection title="หลัก">
+            <div className="grid gap-4 lg:grid-cols-4">
+              <NumberField disabled={busy} label="จำนวนข้อความ" min={1} onChange={(value) => setValue("maxMessages", value)} value={draft.maxMessages} />
+              <Field label="เรียงข้อความ">
+                <Select disabled={busy} value={draft.order} onChange={(event) => setValue("order", event.target.value)}>
+                  <option value="newest-bottom">ข้อความใหม่อยู่ล่าง</option>
+                  <option value="newest-top">ข้อความใหม่อยู่บน</option>
+                </Select>
+              </Field>
+              <Field label="จัดแนว">
+                <Select disabled={busy} value={draft.align} onChange={(event) => setValue("align", event.target.value)}>
+                  <option value="left">ซ้าย</option>
+                  <option value="right">ขวา</option>
+                </Select>
+              </Field>
+              <Field label="สไตล์กล่อง">
+                <Select disabled={busy} value={draft.bubbleStyle} onChange={(event) => setValue("bubbleStyle", event.target.value)}>
+                  <option value="glass">Glass</option>
+                  <option value="solid">Solid</option>
+                  <option value="outline">Outline</option>
+                  <option value="minimal">Minimal</option>
+                </Select>
+              </Field>
+            </div>
+          </SettingsSection>
+        ) : null}
 
-        <SettingsSection title="สี">
-          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-            <ColorField disabled={busy} label="พื้นหลัง" value={draft.backgroundColor} onChange={(value) => setValue("backgroundColor", value)} />
-            <ColorField disabled={busy} label="กล่องข้อความ" value={draft.bubbleColor} onChange={(value) => setValue("bubbleColor", value)} />
-            <ColorField disabled={busy} label="ข้อความ" value={draft.textColor} onChange={(value) => setValue("textColor", value)} />
-            <ColorField disabled={busy} label="ชื่อ TikTok" value={draft.tiktokNameColor} onChange={(value) => setValue("tiktokNameColor", value)} />
-            <ColorField disabled={busy} label="ชื่อ YouTube" value={draft.youtubeNameColor} onChange={(value) => setValue("youtubeNameColor", value)} />
-          </div>
-        </SettingsSection>
+        {activeTab === "display" ? (
+          <SettingsSection title="การแสดงผล">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <ToggleField disabled={busy} label="Avatar" checked={draft.showAvatar} onChange={(value) => setValue("showAvatar", value)} />
+              <ToggleField disabled={busy} label="ชื่อผู้ส่ง" checked={draft.showName} onChange={(value) => setValue("showName", value)} />
+              <ToggleField disabled={busy} label="โลโก้แพลตฟอร์ม" checked={draft.showPlatformLogo} onChange={(value) => setValue("showPlatformLogo", value)} />
+              <ToggleField disabled={busy} label="ข้อความรอแชท" checked={draft.showEmptyState} onChange={(value) => setValue("showEmptyState", value)} />
+              <ToggleField disabled={busy} label="Animation" checked={draft.animateMessages} onChange={(value) => setValue("animateMessages", value)} />
+              <ToggleField disabled={busy} label="Compact mode" checked={draft.compactMode} onChange={(value) => setValue("compactMode", value)} />
+              <ToggleField disabled={busy} label="เงาตัวอักษร" checked={draft.textShadow} onChange={(value) => setValue("textShadow", value)} />
+            </div>
+          </SettingsSection>
+        ) : null}
 
-        <SettingsSection title="ขนาดและระยะห่าง">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <RangeField disabled={busy} label="Opacity พื้นหลัง" min={0} max={1} step={0.05} value={draft.backgroundOpacity} onChange={(value) => setValue("backgroundOpacity", value)} />
-            <RangeField disabled={busy} label="Opacity กล่อง" min={0} max={1} step={0.05} value={draft.bubbleOpacity} onChange={(value) => setValue("bubbleOpacity", value)} />
-            <RangeField disabled={busy} label="Opacity เส้นขอบ" min={0} max={1} step={0.05} value={draft.borderOpacity} onChange={(value) => setValue("borderOpacity", value)} />
-            <RangeField disabled={busy} label="ข้อความ" min={10} max={36} step={1} value={draft.fontSize} onChange={(value) => setValue("fontSize", value)} />
-            <RangeField disabled={busy} label="ชื่อ" min={10} max={28} step={1} value={draft.nameFontSize} onChange={(value) => setValue("nameFontSize", value)} />
-            <RangeField disabled={busy} label="Avatar" min={18} max={80} step={1} value={draft.avatarSize} onChange={(value) => setValue("avatarSize", value)} />
-            <RangeField disabled={busy} label="Padding Widget" min={0} max={40} step={1} value={draft.padding} onChange={(value) => setValue("padding", value)} />
-            <RangeField disabled={busy} label="ระยะห่างข้อความ" min={0} max={28} step={1} value={draft.gap} onChange={(value) => setValue("gap", value)} />
-            <RangeField disabled={busy} label="มุมกล่อง" min={0} max={32} step={1} value={draft.borderRadius} onChange={(value) => setValue("borderRadius", value)} />
-            <RangeField disabled={busy} label="Padding แนวนอน" min={4} max={32} step={1} value={draft.messagePaddingX} onChange={(value) => setValue("messagePaddingX", value)} />
-            <RangeField disabled={busy} label="Padding แนวตั้ง" min={2} max={24} step={1} value={draft.messagePaddingY} onChange={(value) => setValue("messagePaddingY", value)} />
-          </div>
-        </SettingsSection>
+        {activeTab === "colors" ? (
+          <SettingsSection title="สี">
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              <ColorField disabled={busy} label="พื้นหลัง" value={draft.backgroundColor} onChange={(value) => setValue("backgroundColor", value)} />
+              <ColorField disabled={busy} label="กล่องข้อความ" value={draft.bubbleColor} onChange={(value) => setValue("bubbleColor", value)} />
+              <ColorField disabled={busy} label="ข้อความ" value={draft.textColor} onChange={(value) => setValue("textColor", value)} />
+              <ColorField disabled={busy} label="ชื่อ TikTok" value={draft.tiktokNameColor} onChange={(value) => setValue("tiktokNameColor", value)} />
+              <ColorField disabled={busy} label="ชื่อ YouTube" value={draft.youtubeNameColor} onChange={(value) => setValue("youtubeNameColor", value)} />
+            </div>
+          </SettingsSection>
+        ) : null}
+
+        {activeTab === "spacing" ? (
+          <SettingsSection title="ขนาดและระยะห่าง">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <RangeField disabled={busy} label="Opacity พื้นหลัง" min={0} max={1} step={0.05} value={draft.backgroundOpacity} onChange={(value) => setValue("backgroundOpacity", value)} />
+              <RangeField disabled={busy} label="Opacity กล่อง" min={0} max={1} step={0.05} value={draft.bubbleOpacity} onChange={(value) => setValue("bubbleOpacity", value)} />
+              <RangeField disabled={busy} label="Opacity เส้นขอบ" min={0} max={1} step={0.05} value={draft.borderOpacity} onChange={(value) => setValue("borderOpacity", value)} />
+              <RangeField disabled={busy} label="ข้อความ" min={10} max={36} step={1} value={draft.fontSize} onChange={(value) => setValue("fontSize", value)} />
+              <RangeField disabled={busy} label="ชื่อ" min={10} max={28} step={1} value={draft.nameFontSize} onChange={(value) => setValue("nameFontSize", value)} />
+              <RangeField disabled={busy} label="Avatar" min={18} max={80} step={1} value={draft.avatarSize} onChange={(value) => setValue("avatarSize", value)} />
+              <RangeField disabled={busy} label="Padding Widget" min={0} max={40} step={1} value={draft.padding} onChange={(value) => setValue("padding", value)} />
+              <RangeField disabled={busy} label="ระยะห่างข้อความ" min={0} max={28} step={1} value={draft.gap} onChange={(value) => setValue("gap", value)} />
+              <RangeField disabled={busy} label="มุมกล่อง" min={0} max={32} step={1} value={draft.borderRadius} onChange={(value) => setValue("borderRadius", value)} />
+              <RangeField disabled={busy} label="Padding แนวนอน" min={4} max={32} step={1} value={draft.messagePaddingX} onChange={(value) => setValue("messagePaddingX", value)} />
+              <RangeField disabled={busy} label="Padding แนวตั้ง" min={2} max={24} step={1} value={draft.messagePaddingY} onChange={(value) => setValue("messagePaddingY", value)} />
+            </div>
+          </SettingsSection>
+        ) : null}
       </div>
     </ResourceCard>
+  );
+}
+
+function TabButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-none border-2 px-4 py-2 text-sm font-bold uppercase tracking-widest transition-all ${
+        active 
+          ? "border-primary bg-primary text-black shadow-brutal-sm" 
+          : "border-transparent bg-transparent text-ink-subtle hover:border-border-base hover:text-white"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
 function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {
   return (
     <section>
-      <p className="mb-3 text-sm font-medium text-slate-200">{title}</p>
+      <p className="mb-4 text-sm font-semibold text-ink-muted">{title}</p>
       {children}
     </section>
   );
@@ -569,9 +604,9 @@ function SettingsSection({ children, title }: { children: React.ReactNode; title
 
 function ToggleField({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (value: boolean) => void }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-300">
+    <label className="flex items-center justify-between gap-3 rounded-none border-2 border-border-base bg-surface-base px-4 py-3 text-sm font-medium text-ink-muted">
       <span>{label}</span>
-      <input checked={checked} className="h-4 w-4 accent-indigo-500" disabled={disabled} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
+      <input checked={checked} className="h-4 w-4 accent-primary" disabled={disabled} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
   );
 }
@@ -581,7 +616,7 @@ function ColorField({ disabled, label, onChange, value }: { disabled: boolean; l
     <Field label={label}>
       <div className="flex min-w-0 gap-2">
         <input
-          className="h-10 w-12 shrink-0 cursor-pointer rounded-md border border-slate-700 bg-slate-950 p-1 disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-12 w-12 shrink-0 cursor-pointer rounded-none border-2 border-border-base bg-surface-base p-1 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           type="color"

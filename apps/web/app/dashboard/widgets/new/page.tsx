@@ -60,14 +60,15 @@ export default function NewWidgetPage() {
 
   return (
     <DashboardShell title="สร้าง Widget">
-      <div className="mb-5 max-w-2xl">
-        <p className="text-sm leading-6 text-slate-400">เลือก overlay และชนิด widget เพื่อเริ่มวางตำแหน่งบนหน้าจอสตรีม</p>
-      </div>
-      {error ? (
-        <div className="mb-4">
-          <Notice tone="error">{error}</Notice>
+      <div className="flex flex-col gap-8">
+        <div>
+          <p className="text-sm font-medium text-ink-muted">เลือก overlay และชนิด widget เพื่อเริ่มวางตำแหน่งบนหน้าจอสตรีม</p>
+          {error ? (
+            <div className="mt-4">
+              <Notice tone="error">{error}</Notice>
+            </div>
+          ) : null}
         </div>
-      ) : null}
 
       <ResourceCard className="max-w-2xl">
         <form className="space-y-4" onSubmit={submit}>
@@ -105,11 +106,12 @@ export default function NewWidgetPage() {
             </Field>
           </div>
 
-          <Button disabled={busy} type="submit">
-            {busy ? "กำลังบันทึก..." : "บันทึก"}
+          <Button disabled={busy} type="submit" size="lg" className="w-full sm:w-auto bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold">
+            {busy ? "กำลังบันทึก..." : "สร้าง Widget"}
           </Button>
         </form>
       </ResourceCard>
+      </div>
     </DashboardShell>
   );
 }

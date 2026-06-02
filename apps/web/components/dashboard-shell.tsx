@@ -22,11 +22,11 @@ export function DashboardShell({ title, children }: { title: string; children: R
   const router = useRouter();
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(79,70,229,0.12),transparent_34rem),#020617] text-slate-100">
-      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur">
+    <main className="min-h-screen bg-surface-base text-ink-base">
+      <header className="sticky top-0 z-30 border-b border-border-subtle bg-surface-dark">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/dashboard" className="text-lg font-semibold tracking-tight text-white">
+            <Link href="/dashboard" className="mb-2 inline-flex items-center justify-center min-h-[44px] bg-primary px-4 text-sm font-semibold text-surface-base rounded-md hover:opacity-90 transition-opacity">
               EZStream
             </Link>
             <Button
@@ -40,15 +40,15 @@ export function DashboardShell({ title, children }: { title: string; children: R
               ออกจากระบบ
             </Button>
           </div>
-          <nav className="-mx-1 flex gap-1 overflow-x-auto pb-1 text-sm scrollbar-hide" aria-label="Dashboard navigation">
+          <nav className="-mx-1 flex gap-2 overflow-x-auto pb-1 text-sm scrollbar-hide" aria-label="Dashboard navigation">
             {navItems.map(([href, label]) => {
               const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
               return (
                 <Link
                   key={href}
                   href={href}
-                  className={`whitespace-nowrap rounded-md px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                    active ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                  className={`whitespace-nowrap rounded-md px-4 min-h-[44px] flex items-center justify-center text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    active ? "bg-surface-base text-primary shadow-sm" : "text-ink-subtle hover:bg-surface-base hover:text-white"
                   }`}
                 >
                   {label}
@@ -59,7 +59,7 @@ export function DashboardShell({ title, children }: { title: string; children: R
         </div>
       </header>
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <h1 className="mb-5 text-2xl font-semibold tracking-tight text-white sm:text-3xl">{title}</h1>
+        <h1 className="mb-8 text-3xl font-semibold text-white sm:text-4xl">{title}</h1>
         {children}
       </section>
     </main>

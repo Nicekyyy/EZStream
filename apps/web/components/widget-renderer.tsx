@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 
 export type OverlayWidget = {
@@ -137,7 +137,7 @@ export function renderChatMessageText(message: string) {
   return parts.length ? parts : message;
 }
 
-export function WidgetRenderer({ widget, chatMessages = [] }: { widget: OverlayWidget; chatMessages?: UnifiedChatMessage[] }) {
+export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessages = [] }: { widget: OverlayWidget; chatMessages?: UnifiedChatMessage[] }) {
   const state = widget.state?.state ?? {};
   const config = widget.config ?? {};
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -183,18 +183,18 @@ export function WidgetRenderer({ widget, chatMessages = [] }: { widget: OverlayW
   }, [widget, state, chatMessages]);
 
   return (
-    <section className="absolute overflow-hidden rounded-md text-white shadow-lg ring-1 ring-white/10" style={style}>
+    <section className="absolute overflow-hidden rounded-none text-white shadow-lg ring-1 ring-white/10" style={style}>
       {body}
       {widget.type === "SOUND_WIDGET" && audioSource ? <audio ref={audioRef} src={audioSource} preload="auto" /> : null}
     </section>
   );
-}
+});
 
 function StatusWidget({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex h-full flex-col justify-center bg-black/70 p-3">
-      <p className="text-xs uppercase tracking-normal text-white/60">{label}</p>
-      <p className="text-lg font-semibold">{value}</p>
+    <div className="flex h-full flex-col justify-center bg-black/70 p-4">
+      <p className="mb-1 text-xs font-semibold text-ink-subtle">{label}</p>
+      <p className="text-lg font-black">{value}</p>
     </div>
   );
 }
@@ -204,11 +204,10 @@ function AlertWidget({ widget }: { widget: OverlayWidget }) {
   const config = widget.config ?? {};
   const message = text(state.renderedText) || text((state.lastAction as Record<string, unknown> | undefined)?.renderedText) || text(config.template, widget.name);
   return (
-    <div className="flex h-full items-center gap-3 bg-black/70 p-4">
-      <div className="h-12 w-1 rounded bg-emerald-400" />
+    <div className="flex h-full items-center gap-4 bg-black/70 p-5 border-l-4 border-primary">
       <div>
-        <p className="text-sm text-white/60">Alert</p>
-        <p className="text-2xl font-semibold leading-tight">{message}</p>
+        <p className="mb-1 text-xs font-semibold text-ink-subtle">Alert</p>
+        <p className="text-3xl font-black leading-tight text-white">{message}</p>
       </div>
     </div>
   );
@@ -221,9 +220,9 @@ function GoalWidget({ widget }: { widget: OverlayWidget }) {
   const target = number(state.target, number(config.target, 100));
   const progress = Math.max(0, Math.min(100, (current / target) * 100));
   return (
-    <div className="flex h-full flex-col justify-center bg-black/70 p-4">
-      <div className="mb-2 flex justify-between text-sm"><span>{text(config.label, "Goal")}</span><span>{current}/{target}</span></div>
-      <div className="h-4 rounded bg-slate-900/20"><div className="h-4 rounded bg-emerald-400" style={{ width: `${progress}%` }} /></div>
+    <div className="flex h-full flex-col justify-center bg-black/70 p-5">
+      <div className="mb-3 flex justify-between text-xs font-semibold text-white"><span>{text(config.label, "Goal")}</span><span className="text-primary">{current}/{target}</span></div>
+      <div className="h-6 rounded-none bg-surface-base/50"><div className="h-full rounded-none bg-primary transition-all duration-500 ease-out" style={{ width: `${progress}%` }} /></div>
     </div>
   );
 }
@@ -231,9 +230,9 @@ function GoalWidget({ widget }: { widget: OverlayWidget }) {
 function EventListWidget({ widget }: { widget: OverlayWidget }) {
   const items = Array.isArray(widget.state?.state?.items) ? widget.state?.state?.items.slice(0, 8) : [];
   return (
-    <div className="h-full space-y-2 overflow-hidden bg-black/70 p-3">
-      <p className="text-sm font-medium text-white/70">Recent Events</p>
-      {items.map((item, index) => <p key={index} className="truncate rounded bg-slate-900/10 px-2 py-1 text-sm">{JSON.stringify(item)}</p>)}
+    <div className="h-full space-y-3 overflow-hidden bg-black/70 p-4">
+      <p className="mb-2 text-xs font-semibold text-ink-subtle">Recent Events</p>
+      {items.map((item, index) => <p key={index} className="truncate rounded-none border-l-2 border-primary bg-surface-base/40 px-3 py-2 text-xs font-bold text-white">{JSON.stringify(item)}</p>)}
     </div>
   );
 }
@@ -286,7 +285,7 @@ function ChatWidget({ widget, chatMessages }: { widget: OverlayWidget; chatMessa
     <div className={`flex h-full flex-col justify-end overflow-hidden bg-transparent ${fontFamily === "mono" ? "font-mono" : ""}`} style={containerStyle}>
       <div className={`flex min-h-0 ${listDirection} overflow-y-auto pr-1 scrollbar-hide`} style={{ gap }}>
         {visibleMessages.length === 0 && showEmptyState ? (
-          <div className="rounded-md bg-black/45 px-3 py-2 text-sm font-medium text-white/65 ring-1 ring-white/10">
+          <div className="rounded-none border-2 border-border-base bg-surface-base px-4 py-3 text-xs font-semibold text-ink-subtle">
             รอข้อความแชท...
           </div>
         ) : (
@@ -340,7 +339,7 @@ function ImageWidget({ widget }: { widget: OverlayWidget }) {
 function TextWidget({ widget }: { widget: OverlayWidget }) {
   const value = text(widget.state?.state?.text) || text(widget.config.text, widget.name);
   const fontSize = number(widget.config.fontSize, 28);
-  return <div className="flex h-full items-center bg-black/70 p-3 font-semibold" style={{ fontSize }}>{value}</div>;
+  return <div className="flex h-full items-center bg-black/70 p-4 font-black" style={{ fontSize }}>{value}</div>;
 }
 
 function YoutubeIcon({ className }: { className?: string }) {
