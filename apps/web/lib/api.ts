@@ -1,7 +1,18 @@
 "use client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "");
+
+const isTauri = typeof window !== "undefined" && (
+  window.location.origin.startsWith("tauri://") ||
+  window.location.origin.startsWith("http://tauri.localhost") ||
+  window.location.hostname === "tauri.localhost"
+);
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (
+  typeof window !== "undefined"
+    ? (isTauri ? API_URL : window.location.origin)
+    : ""
+);
 
 export function getToken() {
   if (typeof window === "undefined") return null;

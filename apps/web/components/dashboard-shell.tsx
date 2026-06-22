@@ -1,25 +1,22 @@
 "use client";
 
-import { Button } from "@ezstream/ui";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { clearToken } from "../lib/api";
+import { usePathname } from "next/navigation";
 
 const navItems = [
   ["/dashboard", "ภาพรวม"],
   ["/dashboard/overlays", "Overlays"],
   ["/dashboard/widgets", "Widgets"],
-  ["/dashboard/rules", "Rules"],
   ["/dashboard/events", "Events"],
   ["/dashboard/tts", "TTS"],
   ["/dashboard/chat", "Chat"],
   ["/dashboard/media", "Media"],
-  ["/dashboard/mock-events", "Mock Events"]
+  ["/dashboard/mock-events", "Mock Events"],
+  ["/dashboard/settings", "Settings"]
 ];
 
 export function DashboardShell({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
 
   return (
     <main className="min-h-screen bg-surface-base text-ink-base">
@@ -29,16 +26,6 @@ export function DashboardShell({ title, children }: { title: string; children: R
             <Link href="/dashboard" className="mb-2 inline-flex items-center justify-center min-h-[44px] bg-primary px-4 text-sm font-semibold text-surface-base rounded-md hover:opacity-90 transition-opacity">
               EZStream
             </Link>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                clearToken();
-                router.push("/auth/login");
-              }}
-            >
-              ออกจากระบบ
-            </Button>
           </div>
           <nav className="-mx-1 flex gap-2 overflow-x-auto pb-1 text-sm scrollbar-hide" aria-label="Dashboard navigation">
             {navItems.map(([href, label]) => {

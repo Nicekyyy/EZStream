@@ -9,12 +9,16 @@ export class EventsController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.prisma.eventLog.findMany({
+  async list(@CurrentUser() user: AuthUser) {
+    const logs = await this.prisma.eventLog.findMany({
       where: { creatorId: user.creatorId! },
       orderBy: { createdAt: "desc" },
       take: 100
     });
+    return logs.map(log => ({
+      ...log,
+      matchedRuleIds: JSON.parse(log.matchedRuleIds as string) as string[]
+    }));
   }
 
   @Get(":id")
@@ -22,6 +26,9 @@ export class EventsController {
     const event = await this.prisma.eventLog.findUnique({ where: { id } });
     if (!event) throw new NotFoundException("Event not found");
     if (event.creatorId !== user.creatorId) throw new ForbiddenException("Event does not belong to creator");
-    return event;
+    return {
+      ...event,
+      matchedRuleIds: JSON.parse(event.matchedRuleIds as string) as string[]
+    };
   }
 }

@@ -1,9 +1,9 @@
 import { Module } from "@nestjs/common";
-import { RuleEngineModule } from "../rule-engine/rule-engine.module.js";
+import { LiveEventsModule } from "../live-events/live-events.module.js";
 import { MockEventsController } from "./mock-events.controller.js";
 
 @Module({
-  imports: [RuleEngineModule],
+  imports: [LiveEventsModule],
   controllers: [MockEventsController]
 })
 export class MockEventsModule {}

@@ -16,7 +16,8 @@ const widgetTypes = [
   "EVENT_LIST_WIDGET",
   "IMAGE_WIDGET",
   "SOUND_WIDGET",
-  "TEXT_WIDGET"
+  "TEXT_WIDGET",
+  "VIEWER_COUNT_WIDGET"
 ];
 
 export default function NewWidgetPage() {
@@ -51,7 +52,7 @@ export default function NewWidgetPage() {
         method: "POST",
         body: JSON.stringify({ overlayId: overlayId || null, name: name.trim(), type, width, height })
       });
-      router.push(`/dashboard/widgets/${widget.id}`);
+      router.push(`/dashboard/widgets/edit?id=${widget.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "สร้าง Widget ไม่สำเร็จ");
       setBusy(false);

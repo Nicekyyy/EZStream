@@ -81,7 +81,7 @@ export default function WidgetsPage() {
   }
 
   async function copyWidgetUrl(widget: Widget) {
-    const copied = await copyText(`${APP_URL}/widget/${widget.id}`);
+    const copied = await copyText(`${APP_URL}/widget?id=${widget.id}`);
     if (copied) {
       setError("");
       setMessage("คัดลอก Widget URL แล้ว");
@@ -118,7 +118,7 @@ export default function WidgetsPage() {
             <ResourceCard key={widget.id} className="p-0 overflow-hidden">
               <div className="p-6">
                 <div className="flex flex-wrap items-center gap-3">
-                  <Link className="text-lg font-bold text-white hover:text-primary transition-colors focus-visible:outline-none focus-visible:text-primary" href={`/dashboard/widgets/${widget.id}`}>
+                  <Link className="text-lg font-bold text-white hover:text-primary transition-colors focus-visible:outline-none focus-visible:text-primary" href={`/dashboard/widgets/edit?id=${widget.id}`}>
                     {widget.name}
                   </Link>
                   <Badge tone={widget.isEnabled ? "success" : "neutral"}>{widget.isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
@@ -146,7 +146,7 @@ export default function WidgetsPage() {
                     Delete
                   </button>
                 </div>
-                <Link href={`/dashboard/widgets/${widget.id}`} className="bg-primary text-surface-base px-6 py-2 text-sm font-semibold hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-white transition-all shadow-none hover:shadow-brutal-sm border-2 border-transparent text-center">
+                <Link href={`/dashboard/widgets/edit?id=${widget.id}`} className="bg-primary text-surface-base px-6 py-2 text-sm font-semibold hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-white transition-all shadow-none hover:shadow-brutal-sm border-2 border-transparent text-center">
                   Manage Widget
                 </Link>
               </div>

@@ -177,13 +177,17 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
         return <StatusWidget label="Sound" value={state.playing ? "playing" : "ready"} />;
       case "TEXT_WIDGET":
         return <TextWidget widget={widget} />;
+      case "VIEWER_COUNT_WIDGET":
+        return <ViewerCountWidget widget={widget} />;
       default:
         return <StatusWidget label={widget.type} value={widget.name} />;
     }
   }, [widget, state, chatMessages]);
 
+  const showBackground = widget.type === "VIEWER_COUNT_WIDGET" ? bool(config.showBackground, true) : true;
+
   return (
-    <section className="absolute overflow-hidden rounded-none text-white shadow-lg ring-1 ring-white/10" style={style}>
+    <section className={`absolute overflow-hidden rounded-none text-white ${showBackground ? "shadow-lg ring-1 ring-white/10" : ""}`} style={style}>
       {body}
       {widget.type === "SOUND_WIDGET" && audioSource ? <audio ref={audioRef} src={audioSource} preload="auto" /> : null}
     </section>
@@ -340,6 +344,63 @@ function TextWidget({ widget }: { widget: OverlayWidget }) {
   const value = text(widget.state?.state?.text) || text(widget.config.text, widget.name);
   const fontSize = number(widget.config.fontSize, 28);
   return <div className="flex h-full items-center bg-black/70 p-4 font-black" style={{ fontSize }}>{value}</div>;
+}
+
+function ViewerCountWidget({ widget }: { widget: OverlayWidget }) {
+  const state = widget.state?.state ?? {};
+  const config = widget.config ?? {};
+  
+  const youtubeCount = number(state.youtube, 0);
+  const tiktokCount = number(state.tiktok, 0);
+  
+  const platforms = choice(config.platforms, ["all", "youtube", "tiktok"] as const, "all");
+  const showBackground = bool(config.showBackground, true);
+  
+  let dotColorClass = "bg-green-500";
+  let pingColorClass = "bg-green-400";
+  
+  if (platforms === "youtube") {
+    dotColorClass = "bg-red-500";
+    pingColorClass = "bg-red-400";
+  } else if (platforms === "tiktok") {
+    dotColorClass = "bg-cyan-500";
+    pingColorClass = "bg-cyan-400";
+  }
+  
+  return (
+    <div className={`flex h-full items-center gap-3 font-sans font-bold select-none ${
+      showBackground ? "bg-black/70 px-4 py-2" : "bg-transparent px-1 py-0.5"
+    }`}>
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
+        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${pingColorClass} opacity-75`}></span>
+        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${dotColorClass}`}></span>
+      </span>
+
+      <div className="flex items-center gap-3">
+        {(platforms === "all" || platforms === "youtube") && (
+          <div className="flex items-center gap-1.5 text-red-500">
+            <YoutubeIcon className="h-5 w-5 drop-shadow-sm" />
+            <span className="text-white text-base drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+              {youtubeCount.toLocaleString()}
+            </span>
+          </div>
+        )}
+
+        {platforms === "all" && (
+          <div className="h-4 w-px bg-white/20 self-center" />
+        )}
+
+        {(platforms === "all" || platforms === "tiktok") && (
+          <div className="flex items-center gap-1.5 text-cyan-400">
+            <TiktokIcon className="h-4.5 w-4.5 drop-shadow-sm" />
+            <span className="text-white text-base drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+              {tiktokCount.toLocaleString()}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function YoutubeIcon({ className }: { className?: string }) {

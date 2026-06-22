@@ -14,7 +14,6 @@ type DashboardData = {
   creator?: { slug: string; displayName: string };
   overlays: { id: string; name: string; token: string; isActive: boolean }[];
   widgets: { id: string; name: string; type: string; overlayId: string }[];
-  rules: { id: string; name: string; eventType: string }[];
 };
 
 const mockEvents = ["chat", "gift", "follow", "like", "share", "join"];
@@ -30,10 +29,9 @@ export default function DashboardPage() {
     Promise.all([
       api<{ email: string; creator: { slug: string; displayName: string } }>("/auth/me"),
       api<DashboardData["overlays"]>("/overlays"),
-      api<DashboardData["widgets"]>("/widgets"),
-      api<DashboardData["rules"]>("/rules")
+      api<DashboardData["widgets"]>("/widgets")
     ])
-      .then(([me, overlays, widgets, rules]) => setData({ user: me, creator: me.creator, overlays, widgets, rules }))
+      .then(([me, overlays, widgets]) => setData({ user: me, creator: me.creator, overlays, widgets }))
       .catch((err) => setError(err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ"));
   }, []);
 
@@ -57,11 +55,11 @@ export default function DashboardPage() {
     setError("");
     setMessage("");
     try {
-      const result = await api<{ eventType: string; matchedRuleIds: string[] }>(`/mock-events/${type}`, {
+      await api<{ eventType: string }>(`/mock-events/${type}`, {
         method: "POST",
         body: JSON.stringify({ username: "tester", message: "Test Alert!" })
       });
-      setMessage(`[ TEST ${type.toUpperCase()} ] Fired. Matched ${result.matchedRuleIds.length} rule(s).`);
+      setMessage(`[ TEST ${type.toUpperCase()} ] Fired successfully.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "ส่ง Mock Event ไม่สำเร็จ");
     } finally {
@@ -70,7 +68,7 @@ export default function DashboardPage() {
   }
 
   async function copyUrl(token: string) {
-    const copied = await copyText(`${APP_URL}/overlay/${token}`);
+    const copied = await copyText(`${APP_URL}/overlay?token=${token}`);
     if (copied) {
       setError("");
       setMessage("คัดลอก Overlay URL แล้ว");
@@ -95,12 +93,12 @@ export default function DashboardPage() {
       ) : (
         <div className="grid gap-8 lg:grid-cols-3">
           
-          {/* Top/Left Section: The Testing Board */}
+          {/* Left Column: The Testing Board */}
           <div className="flex flex-col gap-8 lg:col-span-2">
             <ResourceCard className="p-8 sm:p-12 bg-surface-base border-border-base hover:shadow-none hover:translate-y-0">
               <div className="flex flex-col gap-2 mb-10 border-b border-border-subtle pb-8">
                 <h2 className="text-3xl sm:text-5xl font-bold">Test Alerts</h2>
-                <p className="text-lg font-medium opacity-80">ยิง event จำลองเพื่อทดสอบ Overlay และ Rule แบบทันที</p>
+                <p className="text-lg font-medium opacity-80">ยิง event จำลองเพื่อทดสอบ Overlay แบบทันที</p>
               </div>
               
               {data?.overlays.length === 0 ? (
@@ -126,18 +124,19 @@ export default function DashboardPage() {
                 </div>
               )}
             </ResourceCard>
-            
-            {/* Left Column Bottom: Overlays & Configs */}
+          </div>
+          
+          {/* Right Column: Overlays & Configs */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            <h3 className="text-lg font-semibold text-white">Active Overlays</h3>
             <div className="flex flex-col gap-4">
-              <h3 className="text-lg font-semibold text-white">Active Overlays</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {data?.overlays.map((overlay) => (
-                  <ResourceCard key={overlay.id} className="flex flex-col justify-between p-5">
-                    <div className="flex justify-between items-start gap-4">
-                      <p className="font-bold text-white truncate">{overlay.name}</p>
-                      <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "ON" : "OFF"}</Badge>
-                    </div>
-                    <div className="mt-6 flex gap-2">
+              {data?.overlays.map((overlay) => (
+                <ResourceCard key={overlay.id} className="flex flex-col justify-between p-5">
+                  <div className="flex justify-between items-start gap-4">
+                    <p className="font-bold text-white truncate">{overlay.name}</p>
+                    <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "ON" : "OFF"}</Badge>
+                  </div>
+                  <div className="mt-6 flex gap-2">
                     <button 
                       onClick={() => void copyUrl(overlay.token)}
                       className="flex-1 bg-surface-dark border-2 border-border-base min-h-[44px] text-xs font-semibold text-white hover:border-primary hover:text-primary hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-primary transition-all shadow-none hover:shadow-brutal-sm"
@@ -145,7 +144,7 @@ export default function DashboardPage() {
                       Copy URL
                     </button>
                     <Link 
-                      href={`/dashboard/overlays/${overlay.id}`}
+                      href={`/dashboard/overlays/edit?id=${overlay.id}`}
                       className="bg-surface-dark border-2 border-border-base px-4 min-h-[44px] flex items-center justify-center text-xs font-semibold text-ink-muted hover:text-white hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-primary transition-all shadow-none hover:shadow-brutal-sm"
                     >
                       Edit
@@ -154,41 +153,9 @@ export default function DashboardPage() {
                 </ResourceCard>
               ))}
               {data?.overlays.length === 0 && (
-                 <div className="col-span-2">
-                   <EmptyState title="No active overlays" description="สร้าง Overlay และเปิดใช้งานก่อนนำ URL ไปใช้" />
-                 </div>
+                <EmptyState title="No active overlays" description="สร้าง Overlay และเปิดใช้งานก่อนนำ URL ไปใช้" />
               )}
             </div>
-            </div>
-          </div>
-          
-          {/* Right Column: Active Rules Status */}
-          <div className="lg:col-span-1 flex flex-col">
-            <ResourceCard className="flex flex-col flex-1 h-full p-6">
-              <div className="flex items-center justify-between border-b border-border-subtle pb-4 mb-5">
-                <h3 className="text-lg font-semibold text-white">Rule Status</h3>
-                <span className="text-xs font-bold text-accent">{data?.rules.length ?? 0} ACTIVE</span>
-              </div>
-              
-              <div className="flex flex-col gap-3 flex-1">
-                {data?.rules.length === 0 ? (
-                  <EmptyState title="No active rules" description="ตั้งค่า Rule เพื่อให้ระบบทำงานอัตโนมัติระหว่างสตรีม" />
-                ) : (
-                  data?.rules.map((rule) => (
-                    <div key={rule.id} className="flex flex-col gap-1 border border-border-base bg-surface-dark p-4">
-                      <p className="text-sm font-bold text-white">{rule.name}</p>
-                      <p className="text-xs font-medium text-ink-subtle uppercase">{rule.eventType}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              <div className="mt-auto pt-6">
-                <Link href="/dashboard/rules" className="flex w-full items-center justify-center bg-surface-dark border-2 border-border-base min-h-[44px] text-xs font-semibold text-accent hover:text-primary hover:border-primary hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-primary transition-all shadow-none hover:shadow-brutal-sm">
-                  Manage Rules
-                </Link>
-              </div>
-            </ResourceCard>
           </div>
         </div>
       )}

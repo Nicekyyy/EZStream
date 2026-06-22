@@ -77,7 +77,7 @@ export default function OverlaysPage() {
   }
 
   async function copyUrl(overlay: Overlay) {
-    const copied = await copyText(`${APP_URL}/overlay/${overlay.token}`);
+    const copied = await copyText(`${APP_URL}/overlay?token=${overlay.token}`);
     if (copied) {
       setError("");
       setMessage("คัดลอก URL แล้ว");
@@ -124,7 +124,7 @@ export default function OverlaysPage() {
                   <p className="mt-1 text-sm text-slate-400">
                     {overlay.width} x {overlay.height}
                   </p>
-                  <p className="mt-1 break-all text-sm text-slate-500">{APP_URL}/overlay/{overlay.token}</p>
+                  <p className="mt-1 break-all text-sm text-slate-500">{APP_URL}/overlay?token={overlay.token}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" disabled={busyId === overlay.id} onClick={() => void toggleActive(overlay)} type="button">
@@ -134,7 +134,7 @@ export default function OverlaysPage() {
                     คัดลอก URL
                   </Button>
                   <Button size="sm" variant="ghost" asChild>
-                    <Link href={`/dashboard/overlays/${overlay.id}`}>จัดการ</Link>
+                    <Link href={`/dashboard/overlays/edit?id=${overlay.id}`}>จัดการ</Link>
                   </Button>
                   <Button size="sm" variant="destructive" disabled={busyId === overlay.id} onClick={() => void deleteOverlay(overlay)} type="button">
                     ลบ

@@ -7,7 +7,7 @@ import { CurrentUser, type AuthUser } from "../common/current-user.decorator.js"
 import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { REDIS } from "../redis/redis.module.js";
-import { RuleEngineService } from "../rule-engine/rule-engine.service.js";
+import { LiveEventsService } from "../live-events/live-events.service.js";
 
 class MockPayloadDto {
   @IsOptional()
@@ -46,7 +46,7 @@ class MockChatMessageDto {
 @Throttle({ default: { limit: 30, ttl: 60000 } })
 export class MockEventsController {
   constructor(
-    @Inject(RuleEngineService) private readonly ruleEngine: RuleEngineService,
+    @Inject(LiveEventsService) private readonly liveEvents: LiveEventsService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(REDIS) private readonly redis: Redis
   ) {}
@@ -104,7 +104,7 @@ export class MockEventsController {
   }
 
   private create(creatorId: string, eventType: string, payload: object) {
-    return this.ruleEngine.handleMockEvent(creatorId, eventType, payload as Record<string, unknown>);
+    return this.liveEvents.processEvent(creatorId, eventType, payload as Record<string, unknown>);
   }
 
   @Post("chat-message")
@@ -130,7 +130,7 @@ export class MockEventsController {
       JSON.stringify({ room: `overlay-token:${overlay.token}`, event: "chat.message", payload: message })
     );
 
-    await this.ruleEngine.handleMockEvent(user.creatorId!, "live.chat.message", {
+    await this.liveEvents.processEvent(user.creatorId!, "live.chat.message", {
       ...message,
       overlayId: overlay.id,
       overlayToken: overlay.token
