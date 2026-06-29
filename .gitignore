@@ -8,6 +8,9 @@ dist
 out
 build
 *.tsbuildinfo
+api-dist/
+target/
+**/gen/schemas/
 
 # Environment variables
 .env
@@ -53,3 +56,4 @@ coverage
 skills-lock.json
 .turbo
 .nx/cache
+graphify-out/
