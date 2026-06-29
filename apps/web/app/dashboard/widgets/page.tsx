@@ -8,6 +8,8 @@ import { ResourceCard } from "../../../components/resource-card";
 import { Badge, EmptyState, Input, LoadingCards, Notice, PageActions } from "../../../components/ui-kit";
 import { APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
+import { ConfirmDeleteModal } from "../../../components/confirm-delete-modal";
+import { CheckIcon, CopyIcon, ExternalLinkIcon } from "../../../components/icons";
 
 type Widget = {
   id: string;
@@ -28,9 +30,11 @@ export default function WidgetsPage() {
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [copiedId, setCopiedId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [deletingWidget, setDeletingWidget] = useState<Widget | null>(null);
 
   async function load() {
     setWidgets(await api<Widget[]>("/widgets"));
@@ -64,27 +68,34 @@ export default function WidgetsPage() {
     }
   }
 
-  async function deleteWidget(widget: Widget) {
-    if (!window.confirm(`ลบ Widget "${widget.name}"?`)) return;
-    setBusyId(widget.id);
+  function deleteWidget(widget: Widget) {
+    setDeletingWidget(widget);
+  }
+
+  async function confirmDelete() {
+    if (!deletingWidget) return;
+    setBusyId(deletingWidget.id);
     setError("");
     setMessage("");
     try {
-      await api(`/widgets/${widget.id}`, { method: "DELETE" });
+      await api(`/widgets/${deletingWidget.id}`, { method: "DELETE" });
       setMessage("ลบ Widget แล้ว");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "ลบ Widget ไม่สำเร็จ");
     } finally {
       setBusyId("");
+      setDeletingWidget(null);
     }
   }
 
   async function copyWidgetUrl(widget: Widget) {
-    const copied = await copyText(`${APP_URL}/widget/${widget.id}`);
+    const copied = await copyText(`${APP_URL}/widget?id=${widget.id}`);
     if (copied) {
       setError("");
       setMessage("คัดลอก Widget URL แล้ว");
+      setCopiedId(widget.id);
+      setTimeout(() => setCopiedId(""), 2000);
     } else {
       setMessage("");
       setError("คัดลอก Widget URL ไม่สำเร็จ");
@@ -118,7 +129,7 @@ export default function WidgetsPage() {
             <ResourceCard key={widget.id} className="p-0 overflow-hidden">
               <div className="p-6">
                 <div className="flex flex-wrap items-center gap-3">
-                  <Link className="text-lg font-bold text-white hover:text-primary transition-colors focus-visible:outline-none focus-visible:text-primary" href={`/dashboard/widgets/${widget.id}`}>
+                  <Link className="text-lg font-bold text-white hover:text-primary transition-colors focus-visible:outline-none focus-visible:text-primary" href={`/dashboard/widgets/edit?id=${widget.id}`}>
                     {widget.name}
                   </Link>
                   <Badge tone={widget.isEnabled ? "success" : "neutral"}>{widget.isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
@@ -133,21 +144,43 @@ export default function WidgetsPage() {
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-surface-dark border-t-2 border-border-base p-4 gap-4">
                 <div className="flex flex-wrap items-center gap-4 sm:gap-6">
-                  <button disabled={busyId === widget.id} onClick={() => void copyWidgetUrl(widget)} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
-                    คัดลอก URL
+                  <button 
+                    disabled={busyId === widget.id} 
+                    onClick={() => void copyWidgetUrl(widget)} 
+                    className={
+                      copiedId === widget.id
+                        ? "flex items-center gap-1.5 text-sm font-bold text-emerald-400 hover:text-emerald-300 focus-visible:outline-none focus-visible:text-emerald-300 transition-colors disabled:opacity-50"
+                        : "flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50"
+                    }
+                  >
+                    {copiedId === widget.id ? (
+                      <>
+                        <CheckIcon className="h-4 w-4" /> สำเร็จ!
+                      </>
+                    ) : (
+                      <>
+                        <CopyIcon className="h-4 w-4" /> คัดลอก URL
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    onClick={() => window.open(`${APP_URL}/widget?id=${widget.id}&bg=green`, `widget_${widget.id}`, "popup=1,width=800,height=600")} 
+                    className="flex items-center gap-1.5 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:text-indigo-300 transition-colors"
+                  >
+                    <ExternalLinkIcon className="h-4 w-4" /> เปิดหน้าต่างแยก
                   </button>
                   <button disabled={busyId === widget.id} onClick={() => void updateWidget(widget, { isEnabled: !widget.isEnabled })} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
                     {widget.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                   </button>
                   <button disabled={busyId === widget.id} onClick={() => void updateWidget(widget, { visibility: !widget.visibility })} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
-                    {widget.visibility ? "Hide" : "Show"}
+                    {widget.visibility ? "ซ่อน" : "แสดง"}
                   </button>
                   <button disabled={busyId === widget.id} onClick={() => void deleteWidget(widget)} className="text-sm font-medium text-rose-500 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400 transition-colors disabled:opacity-50">
-                    Delete
+                    ลบ
                   </button>
                 </div>
-                <Link href={`/dashboard/widgets/${widget.id}`} className="bg-primary text-surface-base px-6 py-2 text-sm font-semibold hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-white transition-all shadow-none hover:shadow-brutal-sm border-2 border-transparent text-center">
-                  Manage Widget
+                <Link href={`/dashboard/widgets/edit?id=${widget.id}`} className="bg-primary text-surface-base px-6 py-2 text-sm font-semibold hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-white transition-all shadow-none hover:shadow-brutal-sm border-2 border-transparent text-center">
+                  จัดการ Widget
                 </Link>
               </div>
             </ResourceCard>
@@ -166,6 +199,14 @@ export default function WidgetsPage() {
           }
         />
       )}
+      
+      <ConfirmDeleteModal 
+        isOpen={!!deletingWidget}
+        onClose={() => setDeletingWidget(null)}
+        onConfirm={() => void confirmDelete()}
+        title="ลบ Widget"
+        itemName={deletingWidget?.name ?? ""}
+      />
     </DashboardShell>
   );
 }

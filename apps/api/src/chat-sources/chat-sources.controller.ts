@@ -8,8 +8,8 @@ class CreateChatSourceDto {
   @IsString()
   overlayId!: string;
 
-  @IsEnum(["TIKTOK", "YOUTUBE"])
-  platform!: "TIKTOK" | "YOUTUBE";
+  @IsEnum(["TIKTOK", "YOUTUBE", "TWITCH"])
+  platform!: "TIKTOK" | "YOUTUBE" | "TWITCH";
 
   @IsString()
   target!: string;

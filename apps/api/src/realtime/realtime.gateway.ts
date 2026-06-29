@@ -1,14 +1,14 @@
 import { Inject, OnModuleDestroy } from "@nestjs/common";
-import { createAdapter } from "@socket.io/redis-adapter";
 import { ConnectedSocket, MessageBody, OnGatewayDisconnect, OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
-import type { Redis } from "ioredis";
 import { Server, Socket } from "socket.io";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { REDIS } from "../redis/redis.module.js";
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.API_CORS_ORIGIN ?? "http://localhost:3000",
+    origin: (origin: any, callback: any) => {
+      callback(null, true);
+    },
     credentials: true
   }
 })
@@ -16,21 +16,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
   @WebSocketServer()
   server!: Server;
 
-  private subscriber?: Redis;
+  private subscriber?: any;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(REDIS) private readonly redis: Redis
+    @Inject(REDIS) private readonly redis: any
   ) {}
 
   async afterInit(server: Server) {
-    const pubClient = this.redis.duplicate();
-    const subClient = this.redis.duplicate();
-    server.adapter(createAdapter(pubClient, subClient));
-
     this.subscriber = this.redis.duplicate();
     await this.subscriber.subscribe("ezstream:realtime");
-    this.subscriber.on("message", (_channel, raw) => {
+    this.subscriber.on("message", (_channel: string, raw: string) => {
       try {
         const message = JSON.parse(raw) as { room: string; event: string; payload: unknown };
         server.to(message.room).emit(message.event, message.payload);

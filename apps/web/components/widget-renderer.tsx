@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
 import type { UnifiedChatMessage } from "@ezstream/shared";
+import { TiktokIcon, YoutubeIcon, TwitchIcon } from "./icons";
+import { motion, AnimatePresence } from "framer-motion";
 
 export type OverlayWidget = {
   id: string;
@@ -50,6 +52,30 @@ function rgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${clamp(alpha, 0, 1)})`;
 }
 
+function getSmoothOutlineShadows(width: number, color: string) {
+  if (width <= 0) return "";
+  const shadows = [];
+  for (let r = 1; r <= width; r++) {
+    const steps = Math.max(8, Math.ceil(r * 2 * Math.PI));
+    for (let i = 0; i < steps; i++) {
+      const angle = (i * 2 * Math.PI) / steps;
+      const x = (r * Math.cos(angle)).toFixed(2);
+      const y = (r * Math.sin(angle)).toFixed(2);
+      shadows.push(`${x}px ${y}px 0 ${color}`);
+    }
+  }
+  if (width % 1 !== 0) {
+    const steps = Math.max(8, Math.ceil(width * 2 * Math.PI));
+    for (let i = 0; i < steps; i++) {
+      const angle = (i * 2 * Math.PI) / steps;
+      const x = (width * Math.cos(angle)).toFixed(2);
+      const y = (width * Math.sin(angle)).toFixed(2);
+      shadows.push(`${x}px ${y}px 0 ${color}`);
+    }
+  }
+  return shadows.join(", ");
+}
+
 function isInlineEmojiUrl(value: string) {
   try {
     const url = new URL(value);
@@ -72,6 +98,7 @@ function isInlineEmojiUrl(value: string) {
       host.includes("bytednsdoc") ||
       host.startsWith("p16-sign") ||
       host.startsWith("p19-sign") ||
+      host.includes("jtvnw.net") ||
       (host.endsWith("youtube.com") && path.includes("emoji"))
     );
   } catch {
@@ -177,13 +204,17 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
         return <StatusWidget label="Sound" value={state.playing ? "playing" : "ready"} />;
       case "TEXT_WIDGET":
         return <TextWidget widget={widget} />;
+      case "VIEWER_COUNT_WIDGET":
+        return <ViewerCountWidget widget={widget} />;
       default:
         return <StatusWidget label={widget.type} value={widget.name} />;
     }
   }, [widget, state, chatMessages]);
 
+  const showBackground = widget.type === "VIEWER_COUNT_WIDGET" ? bool(config.showBackground, true) : true;
+
   return (
-    <section className="absolute overflow-hidden rounded-none text-white shadow-lg ring-1 ring-white/10" style={style}>
+    <section className={`absolute overflow-hidden rounded-none text-white ${showBackground ? "shadow-lg ring-1 ring-white/10" : ""}`} style={style}>
       {body}
       {widget.type === "SOUND_WIDGET" && audioSource ? <audio ref={audioRef} src={audioSource} preload="auto" /> : null}
     </section>
@@ -245,87 +276,418 @@ function ChatWidget({ widget, chatMessages }: { widget: OverlayWidget; chatMessa
   const showAvatar = bool(config.showAvatar, true);
   const showName = bool(config.showName, true);
   const showEmptyState = bool(config.showEmptyState, true);
-  const animateMessages = bool(config.animateMessages, true);
+  const maxNameLength = Number(config.maxNameLength) || 0;
+  const showBadges = bool(config.showBadges, true);
+  const badgesPosition = choice(config.badgesPosition, ["before_name", "after_name"] as const, "after_name");
+  const animationType = choice(config.animationType, ["none", "fade", "slide-up", "slide-left", "slide-right", "pop"] as const, bool(config.animateMessages, true) ? "fade" : "none");
+  const exitAnimationType = choice(config.exitAnimationType, ["none", "fade", "slide-up", "slide-left", "slide-right", "pop"] as const, bool(config.animateMessages, true) ? "fade" : "none");
+  const animationDuration = number(config.animationDuration, 0.3);
+  const hideAfter = number(config.hideAfter, 0);
   const compactMode = bool(config.compactMode, false);
+  const inlineMessage = bool(config.inlineMessage, false);
+  const nameMessageSpacing = number(config.nameMessageSpacing, 4);
   const textShadow = bool(config.textShadow, true);
   const order = choice(config.order, ["newest-bottom", "newest-top"] as const, "newest-bottom");
   const align = choice(config.align, ["left", "right"] as const, "left");
-  const fontFamily = choice(config.fontFamily, ["system", "mono"] as const, "system");
-  const bubbleStyle = choice(config.bubbleStyle, ["solid", "glass", "outline", "minimal"] as const, "glass");
+  const verticalAlign = choice(config.verticalAlign, ["top", "bottom"] as const, "bottom");
+  const fontFamily = typeof config.fontFamily === "string" && config.fontFamily ? config.fontFamily : "system";
+  const nameFontFamily = typeof config.nameFontFamily === "string" && config.nameFontFamily ? config.nameFontFamily : fontFamily;
+  const bubbleStyle = "solid";
+  const rawFontWeight = String(config.fontWeight || "normal");
+  const fontWeight = ["100", "200", "300", "400", "500", "600", "700", "800", "900", "normal", "medium", "bold", "black"].includes(rawFontWeight) ? rawFontWeight : "normal";
+  const rawNameFontWeight = String(config.nameFontWeight || "bold");
+  const nameFontWeight = ["100", "200", "300", "400", "500", "600", "700", "800", "900", "normal", "medium", "bold", "black"].includes(rawNameFontWeight) ? rawNameFontWeight : "bold";
+  const avatarShape = choice(config.avatarShape, ["circle", "rounded", "square"] as const, "circle");
   const backgroundColor = color(config.backgroundColor, "#000000");
   const bubbleColor = color(config.bubbleColor, "#000000");
   const textColor = color(config.textColor, "#ffffff");
+  const useOwnerTextColor = bool(config.useOwnerTextColor, false);
+  const ownerTextColor = color(config.ownerTextColor, "#fbbf24");
+  const useModTextColor = bool(config.useModTextColor, false);
+  const modTextColor = color(config.modTextColor, "#34d399");
+  const useMemberTextColor = bool(config.useMemberTextColor, false);
+  const memberTextColor = color(config.memberTextColor, "#a78bfa");
+  const useOwnerNameColor = bool(config.useOwnerNameColor, false);
+  const ownerNameColor = color(config.ownerNameColor, "#fbbf24");
+  const useModNameColor = bool(config.useModNameColor, false);
+  const modNameColor = color(config.modNameColor, "#34d399");
+  const useMemberNameColor = bool(config.useMemberNameColor, false);
+  const memberNameColor = color(config.memberNameColor, "#a78bfa");
   const youtubeNameColor = color(config.youtubeNameColor, "#fca5a5");
   const tiktokNameColor = color(config.tiktokNameColor, "#f9a8d4");
+  const twitchNameColor = color(config.twitchNameColor, "#c4b5fd");
+  const randomNameColor = bool(config.randomNameColor, false);
   const backgroundOpacity = clamp(number(config.backgroundOpacity, 0), 0, 1);
   const bubbleOpacity = clamp(number(config.bubbleOpacity, 0.55), 0, 1);
+  const borderColor = color(config.borderColor, "#ffffff");
   const borderOpacity = clamp(number(config.borderOpacity, 0.1), 0, 1);
+  const separateBubbles = bool(config.separateBubbles, false);
+  const nameBubbleColor = color(config.nameBubbleColor, "#000000");
+  const nameBubbleOpacity = clamp(number(config.nameBubbleOpacity, 0.55), 0, 1);
+  const nameBorderWidth = clamp(number(config.nameBorderWidth, 1), 0, 20);
+  const nameBorderColor = color(config.nameBorderColor, "#ffffff");
+  const nameBorderRadius = clamp(number(config.nameBorderRadius, 6), 0, 32);
+  const nameBorderOpacity = clamp(number(config.nameBorderOpacity, 0.1), 0, 1);
+  const nameBubbleDropShadow = bool(config.nameBubbleDropShadow, false);
+  const nameBubbleShadowX = number(config.nameBubbleShadowX, 0);
+  const nameBubbleShadowY = number(config.nameBubbleShadowY, 4);
+  const nameBubbleShadowBlur = clamp(number(config.nameBubbleShadowBlur, 8), 0, 50);
+  const nameBubbleShadowColor = rgba(color(config.nameBubbleShadowColor, "#000000"), clamp(number(config.nameBubbleShadowOpacity, 0.5), 0, 1));
+  const nameBubbleGradient = bool(config.nameBubbleGradient, false);
+  const nameBubbleGradientColor = color(config.nameBubbleGradientColor, "#000000");
+  const nameBubbleGradientAngle = number(config.nameBubbleGradientAngle, 180);
+  const borderWidth = clamp(number(config.borderWidth, 1), 0, 20);
   const fontSize = clamp(number(config.fontSize, 15), 10, 36);
   const nameFontSize = clamp(number(config.nameFontSize, 13), 10, 28);
   const avatarSize = clamp(number(config.avatarSize, 32), 18, 80);
+  const avatarBorderWidth = clamp(number(config.avatarBorderWidth, 2), 0, 8);
+  const avatarBorderColor = rgba(color(config.avatarBorderColor, "#ffffff"), clamp(number(config.avatarBorderOpacity, 0.15), 0, 1));
+  const platformLogoSize = clamp(number(config.platformLogoSize, 16), 10, 40);
+  const platformLogoBorderWidth = clamp(number(config.platformLogoBorderWidth, 0), 0, 8);
+  const platformLogoBorderColor = rgba(color(config.platformLogoBorderColor, "#ffffff"), clamp(number(config.platformLogoBorderOpacity, 0.15), 0, 1));
+  const badgeSize = clamp(number(config.badgeSize, 16), 10, 40);
+  const badgeBorderWidth = clamp(number(config.badgeBorderWidth, 0), 0, 8);
+  const badgeBorderColor = rgba(color(config.badgeBorderColor, "#ffffff"), clamp(number(config.badgeBorderOpacity, 0.15), 0, 1));
   const padding = clamp(number(config.padding, 12), 0, 40);
   const gap = clamp(number(config.gap, 8), 0, 28);
   const borderRadius = clamp(number(config.borderRadius, 6), 0, 32);
   const messagePaddingX = clamp(number(config.messagePaddingX, 12), 4, 32);
   const messagePaddingY = clamp(number(config.messagePaddingY, 8), 2, 24);
+  const textStrokeWidth = clamp(number(config.textStrokeWidth, 0), 0, 10);
+  const textStrokeColor = color(config.textStrokeColor, "#000000");
+  const nameTextStrokeWidth = clamp(number(config.nameTextStrokeWidth, textStrokeWidth), 0, 10);
+  const nameTextStrokeColor = color(config.nameTextStrokeColor, textStrokeColor);
+  const textShadowX = number(config.textShadowX, 0);
+  const textShadowY = number(config.textShadowY, 1);
+  const textShadowBlur = clamp(number(config.textShadowBlur, 1), 0, 20);
+  const textShadowColor = rgba(color(config.textShadowColor, "#000000"), clamp(number(config.textShadowOpacity, 0.55), 0, 1));
+  const nameTextShadow = bool(config.nameTextShadow, textShadow);
+  const nameTextShadowX = number(config.nameTextShadowX, textShadowX);
+  const nameTextShadowY = number(config.nameTextShadowY, textShadowY);
+  const nameTextShadowBlur = clamp(number(config.nameTextShadowBlur, textShadowBlur), 0, 20);
+  const nameTextShadowColor = rgba(color(config.nameTextShadowColor, color(config.textShadowColor, "#000000")), clamp(number(config.nameTextShadowOpacity, number(config.textShadowOpacity, 0.55)), 0, 1));
+  const bubbleDropShadow = bool(config.bubbleDropShadow, false);
+  const bubbleShadowX = number(config.bubbleShadowX, 0);
+  const bubbleShadowY = number(config.bubbleShadowY, 4);
+  const bubbleShadowBlur = clamp(number(config.bubbleShadowBlur, 8), 0, 50);
+  const bubbleShadowColor = rgba(color(config.bubbleShadowColor, "#000000"), clamp(number(config.bubbleShadowOpacity, 0.5), 0, 1));
+  const backgroundGradient = bool(config.backgroundGradient, false);
+  const backgroundGradientColor = color(config.backgroundGradientColor, "#000000");
+  const backgroundGradientAngle = number(config.backgroundGradientAngle, 180);
+  const bubbleGradient = bool(config.bubbleGradient, false);
+  const bubbleGradientColor = color(config.bubbleGradientColor, "#000000");
+  const bubbleGradientAngle = number(config.bubbleGradientAngle, 180);
+
   const displayMessages = [...visibleMessages].reverse();
   const listDirection = order === "newest-top" ? "flex-col" : "flex-col-reverse";
-  const containerStyle: CSSProperties = { backgroundColor: rgba(backgroundColor, backgroundOpacity), padding };
+  const isCustomFont = fontFamily !== "system" && fontFamily !== "mono";
+  const containerStyle: CSSProperties = {
+    background: backgroundGradient ? `linear-gradient(${backgroundGradientAngle}deg, ${rgba(backgroundColor, backgroundOpacity)}, ${rgba(backgroundGradientColor, backgroundOpacity)})` : rgba(backgroundColor, backgroundOpacity),
+    padding,
+    fontFamily: isCustomFont ? `"${fontFamily}", sans-serif` : undefined
+  };
   const bubbleCss: CSSProperties = {
     borderRadius,
     color: textColor,
     fontSize,
     padding: `${messagePaddingY}px ${messagePaddingX}px`,
-    border: bubbleStyle === "outline" ? `1px solid ${rgba(textColor, Math.max(borderOpacity, 0.2))}` : bubbleStyle === "minimal" ? "none" : `1px solid ${rgba("#ffffff", borderOpacity)}`,
-    backgroundColor: bubbleStyle === "minimal" ? "transparent" : rgba(bubbleColor, bubbleStyle === "outline" ? Math.min(bubbleOpacity, 0.18) : bubbleOpacity),
-    backdropFilter: bubbleStyle === "glass" ? "blur(8px)" : undefined
+    fontWeight: !isNaN(parseInt(fontWeight, 10)) ? parseInt(fontWeight, 10) : fontWeight === "black" ? 900 : fontWeight === "bold" ? 700 : fontWeight === "medium" ? 500 : 400,
+    background: bubbleGradient ? `linear-gradient(${bubbleGradientAngle}deg, ${rgba(bubbleColor, bubbleOpacity)}, ${rgba(bubbleGradientColor, bubbleOpacity)})` : rgba(bubbleColor, bubbleOpacity),
+    border: `${borderWidth}px solid ${rgba(borderColor, borderOpacity)}`,
+    boxShadow: bubbleDropShadow
+      ? `${bubbleShadowX}px ${bubbleShadowY}px ${bubbleShadowBlur}px ${bubbleShadowColor}`
+      : undefined,
   };
+  const nameBubbleCss: CSSProperties = {
+    borderRadius: nameBorderRadius,
+    background: nameBubbleGradient ? `linear-gradient(${nameBubbleGradientAngle}deg, ${rgba(nameBubbleColor, nameBubbleOpacity)}, ${rgba(nameBubbleGradientColor, nameBubbleOpacity)})` : rgba(nameBubbleColor, nameBubbleOpacity),
+    border: `${nameBorderWidth}px solid ${rgba(nameBorderColor, nameBorderOpacity)}`,
+    boxShadow: nameBubbleDropShadow
+      ? `${nameBubbleShadowX}px ${nameBubbleShadowY}px ${nameBubbleShadowBlur}px ${nameBubbleShadowColor}`
+      : undefined,
+    padding: separateBubbles ? `${messagePaddingY / 1.5}px ${messagePaddingX}px` : undefined,
+  };
+  const textShadowOutline = useMemo(() => getSmoothOutlineShadows(textStrokeWidth, textStrokeColor), [textStrokeWidth, textStrokeColor]);
+  const nameTextShadowOutline = useMemo(() => getSmoothOutlineShadows(nameTextStrokeWidth, nameTextStrokeColor), [nameTextStrokeWidth, nameTextStrokeColor]);
+
+  const getAnimationVariants = (entry: string, exit: string) => {
+    const variants: any = {
+      initial: { opacity: 1, scale: 1, x: 0, y: 0 },
+      animate: { opacity: 1, scale: 1, x: 0, y: 0 },
+      exit: { opacity: 1, scale: 1, x: 0, y: 0 }
+    };
+
+    switch (entry) {
+      case "fade": variants.initial.opacity = 0; break;
+      case "slide-up": variants.initial.opacity = 0; variants.initial.y = 20; break;
+      case "slide-left": variants.initial.opacity = 0; variants.initial.x = 20; break;
+      case "slide-right": variants.initial.opacity = 0; variants.initial.x = -20; break;
+      case "pop": variants.initial.opacity = 0; variants.initial.scale = 0.5; break;
+      default: break;
+    }
+
+    switch (exit) {
+      case "fade": variants.exit.opacity = 0; break;
+      case "slide-up": variants.exit.opacity = 0; variants.exit.y = -20; break;
+      case "slide-left": variants.exit.opacity = 0; variants.exit.x = -20; break;
+      case "slide-right": variants.exit.opacity = 0; variants.exit.x = 20; break;
+      case "pop": variants.exit.opacity = 0; variants.exit.scale = 0.5; break;
+      default: break;
+    }
+
+    return variants;
+  };
+  const animationVariants = getAnimationVariants(animationType, exitAnimationType);
+  const enableAnimation = animationType !== "none" || exitAnimationType !== "none";
+  const shapeClass = avatarShape === "circle" ? "rounded-full" : avatarShape === "rounded" ? "rounded-xl" : "rounded-none";
 
   return (
-    <div className={`flex h-full flex-col justify-end overflow-hidden bg-transparent ${fontFamily === "mono" ? "font-mono" : ""}`} style={containerStyle}>
-      <div className={`flex min-h-0 ${listDirection} overflow-y-auto pr-1 scrollbar-hide`} style={{ gap }}>
-        {visibleMessages.length === 0 && showEmptyState ? (
-          <div className="rounded-none border-2 border-border-base bg-surface-base px-4 py-3 text-xs font-semibold text-ink-subtle">
-            รอข้อความแชท...
-          </div>
-        ) : (
-          displayMessages.map((msg) => (
-            <div key={msg.id} className={`flex items-start gap-2 ${align === "right" ? "flex-row-reverse" : ""} ${animateMessages ? "animate-[fadeIn_0.24s_ease-out]" : ""}`}>
-              {showAvatar ? (
-                <div className="relative mt-0.5 flex-shrink-0" style={{ height: avatarSize, width: avatarSize }}>
-                  {msg.avatarUrl ? (
-                    <img src={msg.avatarUrl} alt="" referrerPolicy="no-referrer" className="h-full w-full rounded-full object-cover ring-2 ring-white/15" />
-                  ) : (
-                    <span className={`flex h-full w-full items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/15 ${msg.platform === "tiktok" ? "bg-rose-600" : "bg-red-600"}`}>
-                      {msg.platform === "tiktok" ? "T" : "Y"}
-                    </span>
-                  )}
-                </div>
-              ) : null}
-              <div className={`min-w-0 max-w-full shadow-md ${align === "right" ? "text-right" : ""}`} style={bubbleCss}>
-                {(showPlatformLogo || showName) && !compactMode ? (
-                  <div className={`mb-0.5 flex min-w-0 items-center gap-2 ${align === "right" ? "justify-end" : ""}`}>
-                    {showPlatformLogo ? (
-                      msg.platform === "tiktok" ? (
-                        <TiktokIcon className="h-4 w-4 flex-shrink-0 drop-shadow-sm" />
+    <div className={`flex h-full flex-col ${verticalAlign === "top" ? "justify-start" : "justify-end"} overflow-hidden bg-transparent ${fontFamily === "mono" ? "font-mono" : ""}`} style={containerStyle}>
+      <div className={`relative flex min-h-0 ${listDirection} overflow-y-auto pr-1 scrollbar-hide`} style={{ gap }}>
+        <AnimatePresence initial={false} mode="popLayout">
+          {visibleMessages.length === 0 && showEmptyState ? (
+            <motion.div
+              key="empty-state"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="rounded-none border-2 border-border-base bg-surface-base px-4 py-3 text-xs font-semibold text-ink-subtle"
+            >
+              รอข้อความแชท...
+            </motion.div>
+          ) : (
+            displayMessages.map((msg) => {
+              let msgTextColor = textColor;
+              let nameColor = msg.platform === "youtube" ? youtubeNameColor : msg.platform === "tiktok" ? tiktokNameColor : twitchNameColor;
+
+              if (randomNameColor) {
+                const str = msg.username || msg.displayName || "";
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                  hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                const hue = Math.abs(hash) % 360;
+                nameColor = `hsl(${hue}, 85%, 75%)`;
+              }
+
+              if (msg.badges) {
+                const badgeLabels = msg.badges.map(b => b.label.toLowerCase());
+                const isOwner = badgeLabels.includes("broadcaster") || badgeLabels.includes("owner") || badgeLabels.includes("host") || badgeLabels.includes("creator");
+                const isMod = badgeLabels.includes("moderator");
+                const isMember = badgeLabels.includes("subscriber") || badgeLabels.includes("member") || badgeLabels.includes("vip") || badgeLabels.includes("founder");
+
+                if (useOwnerTextColor && isOwner) {
+                  msgTextColor = ownerTextColor;
+                } else if (useModTextColor && isMod) {
+                  msgTextColor = modTextColor;
+                } else if (useMemberTextColor && isMember) {
+                  msgTextColor = memberTextColor;
+                }
+
+                if (useOwnerNameColor && isOwner) {
+                  nameColor = ownerNameColor;
+                } else if (useModNameColor && isMod) {
+                  nameColor = modNameColor;
+                } else if (useMemberNameColor && isMember) {
+                  nameColor = memberNameColor;
+                }
+              }
+
+              return (
+                <motion.div
+                  key={msg.id}
+                  variants={animationVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={enableAnimation ? { duration: animationDuration } : { duration: 0 }}
+                  style={hideAfter > 0 ? { animation: `fadeOut 0.5s ease-in ${hideAfter}s forwards` } : {}}
+                  className={`flex ${align === "right" ? "justify-end" : "justify-start"}`}
+                >
+                  <div className={`flex items-start gap-2 max-w-full ${align === "right" ? "flex-row-reverse" : ""}`}>
+                    {showAvatar && msg.platform !== "twitch" ? (
+                      <div className="relative mt-0.5 flex-shrink-0" style={{ height: avatarSize, width: avatarSize }}>
+                        {msg.avatarUrl ? (
+                          <img src={msg.avatarUrl} alt="" referrerPolicy="no-referrer" className={`h-full w-full object-cover ${shapeClass}`} style={{ borderWidth: avatarBorderWidth, borderColor: avatarBorderColor, borderStyle: avatarBorderWidth > 0 ? 'solid' : 'none' }} />
+                        ) : (
+                          <span className={`flex h-full w-full items-center justify-center text-xs font-bold text-white ${shapeClass} ${msg.platform === "tiktok" ? "bg-slate-900" : "bg-white"}`} style={{ borderWidth: avatarBorderWidth, borderColor: avatarBorderColor, borderStyle: avatarBorderWidth > 0 ? 'solid' : 'none' }}>
+                            {msg.platform === "tiktok" ? <TiktokIcon className="h-5 w-5" /> : <YoutubeIcon className="h-6 w-6" />}
+                          </span>
+                        )}
+                      </div>
+                    ) : null}
+                    <div
+                      className={`min-w-0 max-w-full ${separateBubbles && !inlineMessage ? "flex flex-col" : ""} ${!separateBubbles || inlineMessage ? "shadow-md" : ""} ${align === "right" ? (separateBubbles && !inlineMessage ? "items-end text-right" : "text-right") : (separateBubbles && !inlineMessage ? "items-start text-left" : "")}`}
+                      style={!separateBubbles || inlineMessage ? { ...bubbleCss, color: msgTextColor } : { color: msgTextColor }}
+                    >
+                      {inlineMessage && !compactMode ? (
+                        <p className={`break-words leading-snug ${align === "right" ? "text-right" : ""}`} style={{
+                          padding: `0 ${textStrokeWidth}px`,
+                          marginLeft: `-${textStrokeWidth}px`,
+                          marginRight: `-${textStrokeWidth}px`,
+                          textShadow: textShadowOutline || undefined,
+                          filter: textShadow ? `drop-shadow(${textShadowX}px ${textShadowY}px ${textShadowBlur}px ${textShadowColor})` : undefined
+                        }}>
+                          <span
+                            className={`inline-flex items-center gap-1.5 align-middle ${align === "right" ? "flex-row-reverse" : ""}`}
+                            style={{
+                              ...(separateBubbles ? nameBubbleCss : {}),
+                              [align === "right" ? "marginLeft" : "marginRight"]: `${nameMessageSpacing}px`
+                            }}
+                          >
+                            {showPlatformLogo ? (
+                              msg.platform === "tiktok" ? (
+                                <span className="flex-shrink-0 drop-shadow-sm rounded-full flex items-center justify-center" style={{ width: platformLogoSize, height: platformLogoSize, borderWidth: platformLogoBorderWidth, borderColor: platformLogoBorderColor, borderStyle: platformLogoBorderWidth > 0 ? 'solid' : 'none', background: platformLogoBorderWidth > 0 ? "#000" : "transparent", overflow: 'hidden' }}>
+                                  <TiktokIcon className="w-full h-full" style={{ transform: platformLogoBorderWidth > 0 ? "scale(1.15)" : "none" }} />
+                                </span>
+                              ) : msg.platform === "twitch" ? (
+                                <span className="flex-shrink-0 drop-shadow-sm rounded-full flex items-center justify-center" style={{ width: platformLogoSize, height: platformLogoSize, borderWidth: platformLogoBorderWidth, borderColor: platformLogoBorderColor, borderStyle: platformLogoBorderWidth > 0 ? 'solid' : 'none', background: platformLogoBorderWidth > 0 ? "#9146FF" : "transparent", overflow: 'hidden' }}>
+                                  <TwitchIcon className="w-full h-full" style={{ transform: platformLogoBorderWidth > 0 ? "scale(1.15)" : "none" }} />
+                                </span>
+                              ) : (
+                                <span className="flex-shrink-0 drop-shadow-sm rounded-full flex items-center justify-center" style={{ width: platformLogoSize, height: platformLogoSize, borderWidth: platformLogoBorderWidth, borderColor: platformLogoBorderColor, borderStyle: platformLogoBorderWidth > 0 ? 'solid' : 'none', background: platformLogoBorderWidth > 0 ? "#fff" : "transparent", overflow: 'hidden' }}>
+                                  <YoutubeIcon className="w-full h-full" style={{ transform: platformLogoBorderWidth > 0 ? "scale(1.15)" : "none" }} />
+                                </span>
+                              )
+                            ) : null}
+                            {showName ? (
+                              <span className="flex items-center gap-1.5 shrink-0">
+                                {showBadges && badgesPosition === "before_name" && msg.badges && msg.badges.length > 0 ? (
+                                  <span className="flex items-center gap-1 shrink-0">
+                                    {msg.badges.map((badge, i) =>
+                                      badge.url ? (
+                                        <img key={i} src={badge.url} alt={badge.label} title={badge.label} className={`object-contain rounded-full ${badge.url.includes('googlesymbols') ? 'invert opacity-80' : ''}`} style={{ width: badgeSize, height: badgeSize, borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none', background: badgeBorderWidth > 0 ? 'rgba(0,0,0,0.5)' : 'transparent' }} />
+                                      ) : (
+                                        <span key={i} className="font-black uppercase tracking-wider bg-white/20 px-1 rounded-sm flex items-center justify-center" style={{ height: badgeSize, fontSize: Math.max(10, badgeSize * 0.6), borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none' }}>{badge.label}</span>
+                                      )
+                                    )}
+                                  </span>
+                                ) : null}
+                                <span
+                                  className="font-bold tracking-tight leading-tight"
+                                  style={{
+                                    padding: `0 ${nameTextStrokeWidth}px`,
+                                    marginLeft: `-${nameTextStrokeWidth}px`,
+                                    marginRight: `-${nameTextStrokeWidth}px`,
+                                    fontSize: `${nameFontSize}px`,
+                                    color: nameColor,
+                                    fontWeight: !isNaN(parseInt(nameFontWeight, 10)) ? parseInt(nameFontWeight, 10) : nameFontWeight === "black" ? 900 : nameFontWeight === "bold" ? 700 : nameFontWeight === "medium" ? 500 : 400,
+                                    fontFamily: nameFontFamily !== "system" && nameFontFamily !== "mono" ? `"${nameFontFamily}", sans-serif` : nameFontFamily === "mono" ? "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" : "system-ui, -apple-system, sans-serif",
+                                    textShadow: nameTextShadowOutline || undefined,
+                                    filter: nameTextShadow ? `drop-shadow(${nameTextShadowX}px ${nameTextShadowY}px ${nameTextShadowBlur}px ${nameTextShadowColor})` : undefined
+                                  }}
+                                >
+                                  {maxNameLength > 0 && msg.displayName.length > maxNameLength ? `${msg.displayName.substring(0, maxNameLength)}...` : msg.displayName}
+                                </span>
+                                {showBadges && badgesPosition === "after_name" && msg.badges && msg.badges.length > 0 ? (
+                                  <span className="flex items-center gap-1 shrink-0">
+                                    {msg.badges.map((badge, i) =>
+                                      badge.url ? (
+                                        <img key={i} src={badge.url} alt={badge.label} title={badge.label} className={`object-contain rounded-full ${badge.url.includes('googlesymbols') ? 'invert opacity-80' : ''}`} style={{ width: badgeSize, height: badgeSize, borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none', background: badgeBorderWidth > 0 ? 'rgba(0,0,0,0.5)' : 'transparent' }} />
+                                      ) : (
+                                        <span key={i} className="font-black uppercase tracking-wider bg-white/20 px-1 rounded-sm flex items-center justify-center" style={{ height: badgeSize, fontSize: Math.max(10, badgeSize * 0.6), borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none' }}>{badge.label}</span>
+                                      )
+                                    )}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                          </span>
+                          {renderChatMessageText(msg.message)}
+                        </p>
                       ) : (
-                        <YoutubeIcon className="h-5 w-5 flex-shrink-0 drop-shadow-sm" />
-                      )
-                    ) : null}
-                    {showName ? (
-                      <span className="truncate font-bold leading-tight" style={{ color: msg.platform === "tiktok" ? tiktokNameColor : youtubeNameColor, fontSize: nameFontSize }}>
-                        {msg.displayName}
-                      </span>
-                    ) : null}
+                        <>
+                          {(showPlatformLogo || showName) && !compactMode ? (
+                            <div
+                              className={`flex min-w-0 items-center gap-2 ${align === "right" ? "justify-end" : ""}`}
+                              style={{
+                                ...(separateBubbles ? nameBubbleCss : {}),
+                                marginBottom: `${nameMessageSpacing}px`
+                              }}
+                            >
+                              {showPlatformLogo ? (
+                                msg.platform === "tiktok" ? (
+                                  <span className="flex-shrink-0 drop-shadow-sm rounded-full flex items-center justify-center" style={{ width: platformLogoSize, height: platformLogoSize, borderWidth: platformLogoBorderWidth, borderColor: platformLogoBorderColor, borderStyle: platformLogoBorderWidth > 0 ? 'solid' : 'none', background: platformLogoBorderWidth > 0 ? "#000" : "transparent", overflow: 'hidden' }}>
+                                    <TiktokIcon className="w-full h-full" style={{ transform: platformLogoBorderWidth > 0 ? "scale(1.15)" : "none" }} />
+                                  </span>
+                                ) : msg.platform === "twitch" ? (
+                                  <span className="flex-shrink-0 drop-shadow-sm rounded-full flex items-center justify-center" style={{ width: platformLogoSize, height: platformLogoSize, borderWidth: platformLogoBorderWidth, borderColor: platformLogoBorderColor, borderStyle: platformLogoBorderWidth > 0 ? 'solid' : 'none', background: platformLogoBorderWidth > 0 ? "#9146FF" : "transparent", overflow: 'hidden' }}>
+                                    <TwitchIcon className="w-full h-full" style={{ transform: platformLogoBorderWidth > 0 ? "scale(1.15)" : "none" }} />
+                                  </span>
+                                ) : (
+                                  <span className="flex-shrink-0 drop-shadow-sm rounded-full flex items-center justify-center" style={{ width: platformLogoSize, height: platformLogoSize, borderWidth: platformLogoBorderWidth, borderColor: platformLogoBorderColor, borderStyle: platformLogoBorderWidth > 0 ? 'solid' : 'none', background: platformLogoBorderWidth > 0 ? "#fff" : "transparent", overflow: 'hidden' }}>
+                                    <YoutubeIcon className="w-full h-full" style={{ transform: platformLogoBorderWidth > 0 ? "scale(1.15)" : "none" }} />
+                                  </span>
+                                )
+                              ) : null}
+                              {showName ? (
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {showBadges && badgesPosition === "before_name" && msg.badges && msg.badges.length > 0 ? (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {msg.badges.map((badge, i) =>
+                                        badge.url ? (
+                                          <img key={i} src={badge.url} alt={badge.label} title={badge.label} className={`object-contain rounded-full ${badge.url.includes('googlesymbols') ? 'invert opacity-80' : ''}`} style={{ width: badgeSize, height: badgeSize, borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none', background: badgeBorderWidth > 0 ? 'rgba(0,0,0,0.5)' : 'transparent' }} />
+                                        ) : (
+                                          <span key={i} className="font-black uppercase tracking-wider bg-white/20 px-1 rounded-sm flex items-center justify-center" style={{ height: badgeSize, fontSize: Math.max(10, badgeSize * 0.6), borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none' }}>{badge.label}</span>
+                                        )
+                                      )}
+                                    </div>
+                                  ) : null}
+                                  <span
+                                    className="truncate font-bold tracking-tight leading-tight"
+                                    style={{
+                                      padding: `0 ${nameTextStrokeWidth}px`,
+                                      marginLeft: `-${nameTextStrokeWidth}px`,
+                                      marginRight: `-${nameTextStrokeWidth}px`,
+                                      fontSize: `${nameFontSize}px`,
+                                      color: nameColor,
+                                      fontWeight: !isNaN(parseInt(nameFontWeight, 10)) ? parseInt(nameFontWeight, 10) : nameFontWeight === "black" ? 900 : nameFontWeight === "bold" ? 700 : nameFontWeight === "medium" ? 500 : 400,
+                                      fontFamily: nameFontFamily !== "system" && nameFontFamily !== "mono" ? `"${nameFontFamily}", sans-serif` : nameFontFamily === "mono" ? "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" : "system-ui, -apple-system, sans-serif",
+                                      textShadow: nameTextShadowOutline || undefined,
+                                      filter: nameTextShadow ? `drop-shadow(${nameTextShadowX}px ${nameTextShadowY}px ${nameTextShadowBlur}px ${nameTextShadowColor})` : undefined
+                                    }}
+                                  >
+                                    {maxNameLength > 0 && msg.displayName.length > maxNameLength ? `${msg.displayName.substring(0, maxNameLength)}...` : msg.displayName}
+                                  </span>
+
+                                  {showBadges && badgesPosition === "after_name" && msg.badges && msg.badges.length > 0 ? (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {msg.badges.map((badge, i) =>
+                                        badge.url ? (
+                                          <img key={i} src={badge.url} alt={badge.label} title={badge.label} className={`object-contain rounded-full ${badge.url.includes('googlesymbols') ? 'invert opacity-80' : ''}`} style={{ width: badgeSize, height: badgeSize, borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none', background: badgeBorderWidth > 0 ? 'rgba(0,0,0,0.5)' : 'transparent' }} />
+                                        ) : (
+                                          <span key={i} className="font-black uppercase tracking-wider bg-white/20 px-1 rounded-sm flex items-center justify-center" style={{ height: badgeSize, fontSize: Math.max(10, badgeSize * 0.6), borderWidth: badgeBorderWidth, borderColor: badgeBorderColor, borderStyle: badgeBorderWidth > 0 ? 'solid' : 'none' }}>{badge.label}</span>
+                                        )
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          <div
+                            className={`min-w-0 ${separateBubbles ? "shadow-md" : ""}`}
+                            style={separateBubbles ? { ...bubbleCss, color: msgTextColor } : undefined}
+                          >
+                            <p className="break-words leading-snug" style={{
+                              padding: `0 ${textStrokeWidth}px`,
+                              marginLeft: `-${textStrokeWidth}px`,
+                              marginRight: `-${textStrokeWidth}px`,
+                              textShadow: textShadowOutline || undefined,
+                              filter: textShadow ? `drop-shadow(${textShadowX}px ${textShadowY}px ${textShadowBlur}px ${textShadowColor})` : undefined
+                            }}>
+                              {renderChatMessageText(msg.message)}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
-                ) : null}
-                <p className={`break-words font-medium leading-snug ${textShadow ? "[text-shadow:0_1px_1px_rgba(0,0,0,0.55)]" : ""}`}>
-                  {renderChatMessageText(msg.message)}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
+                </motion.div>
+              );
+            })
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -342,23 +704,108 @@ function TextWidget({ widget }: { widget: OverlayWidget }) {
   return <div className="flex h-full items-center bg-black/70 p-4 font-black" style={{ fontSize }}>{value}</div>;
 }
 
-function YoutubeIcon({ className }: { className?: string }) {
+function ViewerCountWidget({ widget }: { widget: OverlayWidget }) {
+  const state = widget.state?.state ?? {};
+  const config = widget.config ?? {};
+
+  const youtubeCount = number(state.youtube, 0);
+  const tiktokCount = number(state.tiktok, 0);
+  const twitchCount = number(state.twitch, 0);
+
+  const platforms = choice(config.platforms as string, ["all", "youtube", "tiktok", "twitch"], "all");
+  const showBackground = bool(config.showBackground, true);
+  const fontSize = number(config.fontSize, 16);
+  const iconSize = number(config.iconSize, 20);
+  const fontFamily = text(config.fontFamily, "Inter");
+  const fontWeight = text(config.fontWeight, "700");
+  const textColor = color(config.textColor, "#ffffff");
+  const useSeparateColors = bool(config.useSeparateColors, false);
+  const youtubeColor = color(config.youtubeColor, "#ef4444");
+  const tiktokColor = color(config.tiktokColor, "#22d3ee");
+  const twitchColor = color(config.twitchColor, "#c084fc");
+  const textShadow = bool(config.textShadow, true);
+  const backgroundColor = color(config.backgroundColor, "#000000");
+  const backgroundOpacity = number(config.backgroundOpacity, 0.7);
+  const borderRadius = number(config.borderRadius, 8);
+  const gap = number(config.gap, 12);
+  const paddingX = number(config.paddingX, 16);
+  const paddingY = number(config.paddingY, 8);
+  const showPingDot = bool(config.showPingDot, true);
+
+  let dotColorClass = "bg-green-500";
+  let pingColorClass = "bg-green-400";
+
+  if (platforms === "youtube") {
+    dotColorClass = "bg-red-500";
+    pingColorClass = "bg-red-400";
+  } else if (platforms === "tiktok") {
+    dotColorClass = "bg-cyan-500";
+    pingColorClass = "bg-cyan-400";
+  } else if (platforms === "twitch") {
+    dotColorClass = "bg-purple-500";
+    pingColorClass = "bg-purple-400";
+  }
+
+  const containerStyle: React.CSSProperties = {
+    fontFamily: fontFamily !== "Inter" ? `'${fontFamily}', sans-serif` : "sans-serif",
+    fontWeight,
+    fontSize: `${fontSize}px`,
+    gap: `${gap}px`,
+    padding: showBackground ? `${paddingY}px ${paddingX}px` : "2px 4px",
+    backgroundColor: showBackground ? rgba(backgroundColor, backgroundOpacity) : "transparent",
+    borderRadius: `${borderRadius}px`,
+  };
+
+  const baseTextStyle: React.CSSProperties = {
+    textShadow: textShadow ? "0 1px 2px rgba(0,0,0,0.8)" : "none",
+  };
+
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" overflow="visible">
-      <title>YouTube</title>
-      <path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" />
-      <path fill="#FFFFFF" d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-    </svg>
+    <div className="flex h-full items-center select-none" style={containerStyle}>
+      {showPingDot && (
+        <span className="relative flex shrink-0" style={{ width: `${Math.max(10, iconSize * 0.5)}px`, height: `${Math.max(10, iconSize * 0.5)}px` }}>
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${pingColorClass} opacity-75`}></span>
+          <span className={`relative inline-flex rounded-full h-full w-full ${dotColorClass}`}></span>
+        </span>
+      )}
+
+      <div className="flex items-center" style={{ gap: `${gap}px` }}>
+        {(platforms === "all" || platforms === "youtube") && (
+          <div className="flex items-center gap-1.5">
+            <YoutubeIcon style={{ width: `${iconSize}px`, height: `${iconSize}px` }} className="text-red-500 drop-shadow-sm" />
+            <span style={{ ...baseTextStyle, color: useSeparateColors ? youtubeColor : textColor }}>
+              {youtubeCount.toLocaleString()}
+            </span>
+          </div>
+        )}
+
+        {platforms === "all" && (
+          <div className="w-px bg-white/20 self-center" style={{ height: `${iconSize * 0.8}px` }} />
+        )}
+
+        {(platforms === "all" || platforms === "tiktok") && (
+          <div className="flex items-center gap-1.5">
+            <TiktokIcon style={{ width: `${iconSize * 0.9}px`, height: `${iconSize * 0.9}px` }} className="text-cyan-400 drop-shadow-sm" />
+            <span style={{ ...baseTextStyle, color: useSeparateColors ? tiktokColor : textColor }}>
+              {tiktokCount.toLocaleString()}
+            </span>
+          </div>
+        )}
+
+        {platforms === "all" && (
+          <div className="w-px bg-white/20 self-center" style={{ height: `${iconSize * 0.8}px` }} />
+        )}
+
+        {(platforms === "all" || platforms === "twitch") && (
+          <div className="flex items-center gap-1.5">
+            <TwitchIcon style={{ width: `${iconSize * 0.9}px`, height: `${iconSize * 0.9}px` }} className="text-purple-400 drop-shadow-sm" />
+            <span style={{ ...baseTextStyle, color: useSeparateColors ? twitchColor : textColor }}>
+              {twitchCount.toLocaleString()}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-function TiktokIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 448 512" className={className} aria-hidden="true" overflow="visible">
-      <title>TikTok</title>
-      <path fill="#24f6f0" d="M380.9 97.1C339 97.1 320.3 83.2 320.3 64.1v-6.9h-73.4v333.1c0 41.6-33.8 75.3-75.3 75.3s-75.3-33.8-75.3-75.3 33.8-75.3 75.3-75.3c10.4 0 20.3 2.1 29.3 5.9v-79.6c-9.4-2.3-19.2-3.6-29.3-3.6-81.8 0-148.1 66.3-148.1 148.1S89.5 456 171.3 456s148.1-66.3 148.1-148.1V191.7c31.3 24.3 71.1 38.6 114.1 38.6v-75.8c-18.7 0-36.6-4.9-52.6-13.7z" />
-      <path fill="#ff0050" d="M394.3 103.5C352.4 103.5 333.7 89.6 333.7 70.5v-6.9h-73.4v333.1c0 41.6-33.8 75.3-75.3 75.3s-75.3-33.8-75.3-75.3 33.8-75.3 75.3-75.3c10.4 0 20.3 2.1 29.3 5.9v-79.6c-9.4-2.3-19.2-3.6-29.3-3.6-81.8 0-148.1 66.3-148.1 148.1S102.9 462.4 184.7 462.4s148.1-66.3 148.1-148.1V198.1c31.3 24.3 71.1 38.6 114.1 38.6v-75.8c-18.7 0-36.6-4.9-52.6-13.7z" />
-      <path fill="#ffffff" d="M387.6 100.3C345.7 100.3 327 86.4 327 67.3v-6.9h-73.4v333.1c0 41.6-33.8 75.3-75.3 75.3s-75.3-33.8-75.3-75.3 33.8-75.3 75.3-75.3c10.4 0 20.3 2.1 29.3 5.9v-79.6c-9.4-2.3-19.2-3.6-29.3-3.6-81.8 0-148.1 66.3-148.1 148.1S96.2 459.2 178 459.2s148.1-66.3 148.1-148.1V194.9c31.3 24.3 71.1 38.6 114.1 38.6v-75.8c-18.7 0-36.6-4.9-52.6-13.7z" />
-    </svg>
-  );
-}
