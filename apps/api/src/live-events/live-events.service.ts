@@ -93,10 +93,34 @@ export class LiveEventsService {
   }
 
   private async createTtsJob(creatorId: string, eventLogId: string, action: { widgetId: string; textTemplate: string }, payload: Record<string, unknown>) {
-    const text = sanitizeTtsText(renderTemplate(action.textTemplate ?? "{username} said {message}", payload));
-    if (!text) return;
     const widget = await this.prisma.widget.findFirst({ where: { id: action.widgetId, creatorId }, select: { config: true } });
-    const widgetConfig = jsonObject(widget?.config);
+    if (!widget) return;
+    
+    const widgetConfig = jsonObject(widget.config);
+    const message = typeof payload.message === "string" ? payload.message : "";
+    
+    if (widgetConfig.ignoreCommands !== false && (message.startsWith("!") || message.startsWith("/"))) {
+      return;
+    }
+
+    let filteredMessage = message;
+    if (typeof widgetConfig.bannedWords === "string" && widgetConfig.bannedWords.trim()) {
+      const words = widgetConfig.bannedWords.split(",").map((w) => w.trim()).filter(Boolean);
+      for (const word of words) {
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        filteredMessage = filteredMessage.replace(new RegExp(escaped, 'gi'), '');
+      }
+    }
+
+    const maxLen = typeof widgetConfig.maxMessageLength === "number" ? widgetConfig.maxMessageLength : 300;
+    if (filteredMessage.length > maxLen) {
+      filteredMessage = filteredMessage.slice(0, maxLen);
+    }
+
+    const nextPayload = { ...payload, message: filteredMessage };
+    const text = sanitizeTtsText(renderTemplate(action.textTemplate ?? "{username} said {message}", nextPayload));
+    if (!text) return;
+
     const voice = resolveGoogleTtsVoiceName(widgetConfig.voice, defaultGoogleTtsVoice);
     const speed = typeof widgetConfig.speed === "number" ? widgetConfig.speed : 1;
     const pitch = typeof widgetConfig.pitch === "number" ? widgetConfig.pitch : 1;

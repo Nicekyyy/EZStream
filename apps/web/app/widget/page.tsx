@@ -128,22 +128,32 @@ function SingleWidgetContent() {
 
     const loadState = () =>
       fetch(`${API_URL}/public/widget/${widgetId}/state?_t=${Date.now()}`, { cache: "no-store" })
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error("Network response was not ok");
+          return res.json();
+        })
         .then((nextState: WidgetState) => {
           setState(nextState);
           if (nextState.chatMessages?.length) {
             setChatMessages((prev) => mergeChatMessages(prev, nextState.chatMessages ?? []));
           }
           return nextState;
+        })
+        .catch((err) => {
+          console.error("Widget fetch error:", err);
+          return null;
         });
 
     let active = true;
-    void loadState().then((nextState) => {
+    const initSocket = (nextState: WidgetState | null) => {
       if (!active) return;
       const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
       socketRef.current = socket;
       
-      const joinRoom = () => socket.emit("overlay.join", nextState.overlay?.token ? { token: nextState.overlay.token, widgetId } : { widgetId });
+      const joinRoom = () => {
+        socket.emit("overlay.join", nextState?.overlay?.token ? { token: nextState.overlay.token, widgetId } : { widgetId });
+        void loadState(); // refetch state when reconnected
+      };
       if (socket.connected) joinRoom();
       socket.on("connect", joinRoom);
       
@@ -160,7 +170,9 @@ function SingleWidgetContent() {
         setChatMessages((prev) => mergeChatMessages(prev, [payload]));
         if (shouldDebug) setEvents((items) => [`chat.message: ${payload.displayName}: ${payload.message}`, ...items].slice(0, 8));
       });
-    });
+    };
+
+    void loadState().then(initSocket);
 
     return () => {
       active = false;
@@ -176,9 +188,13 @@ function SingleWidgetContent() {
   }, [widgetId]);
 
   const widget = state?.widget ? { ...state.widget, positionX: 0, positionY: 0 } : undefined;
+  const chroma = searchParams.get("chroma") === "true" || searchParams.get("bg") === "green";
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-transparent text-white">
+    <main 
+      className="relative h-screen w-screen overflow-hidden text-white"
+      style={{ backgroundColor: chroma ? "#00FF00" : "transparent" }}
+    >
       {widget ? <WidgetRenderer widget={widget} chatMessages={chatMessages} /> : null}
       {debug ? <aside className="absolute bottom-4 left-4 max-w-xl space-y-1 text-xs">{events.map((event, index) => <p key={index} className="rounded bg-black/60 px-2 py-1">{event}</p>)}</aside> : null}
     </main>
@@ -187,7 +203,7 @@ function SingleWidgetContent() {
 
 export default function SingleWidgetPage() {
   return (
-    <Suspense fallback={<div className="p-4 text-xs text-white">Loading widget...</div>}>
+    <Suspense fallback={<div className="p-4 text-xs text-white">กำลังโหลด Widget...</div>}>
       <SingleWidgetContent />
     </Suspense>
   );

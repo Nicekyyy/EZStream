@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { EventEmitter } from "node:events";
 
-export class InMemoryQueue extends EventEmitter {
+class InMemoryQueue extends EventEmitter {
   private queue: Array<{ id: string; name: string; data: any }> = [];
   private processing = false;
   private processor?: (job: { id: string; name: string; data: any }) => Promise<void>;
@@ -59,18 +59,20 @@ export class QueuesService implements OnModuleInit, OnModuleDestroy {
 
   private readonly lastTtsByCreator = new Map<string, number>();
   private googleAccessToken?: { token: string; expiresAt: number };
-  private googleTtsVoice: string;
+  private googleTtsVoice!: string;
   private googleTtsEndpoint = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(REDIS) private readonly redis: any,
-    private readonly config: ConfigService
+    @Inject(ConfigService) private readonly config: ConfigService
   ) {
-    this.googleTtsVoice = resolveGoogleTtsVoiceName(this.config.get<string>("GOOGLE_TTS_VOICE"), defaultGoogleTtsVoiceName);
+    console.log("[QUEUES_SERVICE_DEBUG] Constructor args:", { prisma: !!prisma, redis: !!redis, config: !!config });
   }
 
   onModuleInit() {
+    this.googleTtsVoice = resolveGoogleTtsVoiceName(this.config.get<string>("GOOGLE_TTS_VOICE"), defaultGoogleTtsVoiceName);
+    
     // Start worker loops
     this.widgetActions.process(async (job) => {
       try {

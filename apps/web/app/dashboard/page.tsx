@@ -79,7 +79,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <DashboardShell title="Command Center">
+    <DashboardShell title="แผงควบคุม">
       <div className="flex flex-col gap-8">
         {(message || error) && (
           <div className="flex flex-col gap-3">
@@ -95,19 +95,22 @@ export default function DashboardPage() {
           
           {/* Left Column: The Testing Board */}
           <div className="flex flex-col gap-8 lg:col-span-2">
-            <ResourceCard className="p-8 sm:p-12 bg-surface-base border-border-base hover:shadow-none hover:translate-y-0">
-              <div className="flex flex-col gap-2 mb-10 border-b border-border-subtle pb-8">
-                <h2 className="text-3xl sm:text-5xl font-bold">Test Alerts</h2>
-                <p className="text-lg font-medium opacity-80">ยิง event จำลองเพื่อทดสอบ Overlay แบบทันที</p>
+            <div className="border-2 border-border-base bg-surface-card p-6 sm:p-10">
+              <div className="mb-6 flex flex-col gap-1 border-b border-border-subtle pb-6">
+                <h2 className="text-xl font-semibold text-ink-base">ทดสอบการแจ้งเตือน</h2>
+                <p className="text-sm font-medium text-ink-subtle">ยิง event จำลองเพื่อทดสอบ Overlay แบบทันที</p>
               </div>
               
               {data?.overlays.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-6 bg-surface-base p-16 text-center border-4 border-surface-base">
-                  <p className="text-white text-2xl font-semibold">ยังไม่มี Overlay ที่ใช้งานได้</p>
-                  <Button asChild size="lg" className="bg-primary text-surface-base hover:opacity-90 shadow-none transition-opacity font-semibold">
-                    <Link href="/dashboard/overlays">สร้าง Overlay ก่อนทดสอบ</Link>
-                  </Button>
-                </div>
+                <EmptyState 
+                  title="ยังไม่มี Overlay ที่ใช้งานได้" 
+                  description="สร้าง Overlay ก่อนทดสอบการแจ้งเตือน"
+                  action={
+                    <Button asChild>
+                      <Link href="/dashboard/overlays">สร้าง Overlay</Link>
+                    </Button>
+                  }
+                />
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {mockEvents.map((event, index) => (
@@ -115,45 +118,44 @@ export default function DashboardPage() {
                       key={event} 
                       disabled={busyType === event}
                       onClick={() => void sendMockEvent(event)}
-                      className="group relative overflow-hidden bg-surface-dark border border-border-base h-32 sm:h-40 text-center hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:border-primary focus-visible:ring-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center text-ink-base"
+                      className="group relative flex h-28 flex-col items-center justify-center overflow-hidden border-2 border-border-base bg-surface-dark text-center text-ink-base transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <span className="text-xl sm:text-2xl font-medium capitalize group-hover:scale-105 transition-transform duration-300">{busyType === event ? "..." : event}</span>
-                      <span className="absolute bottom-3 text-xs font-semibold text-ink-subtle opacity-80 group-hover:text-primary transition-colors">ALT+{index + 1}</span>
+                      <span className="text-lg font-semibold capitalize">{busyType === event ? "กำลังส่ง..." : event}</span>
+                      <span className="mt-2 text-[10px] font-semibold text-ink-faint">ALT + {index + 1}</span>
                     </button>
                   ))}
                 </div>
               )}
-            </ResourceCard>
+            </div>
           </div>
           
           {/* Right Column: Overlays & Configs */}
-          <div className="lg:col-span-1 flex flex-col gap-4">
-            <h3 className="text-lg font-semibold text-white">Active Overlays</h3>
+          <div className="flex flex-col gap-4 lg:col-span-1">
+            <h3 className="text-sm font-semibold text-ink-muted">Overlay ที่เปิดใช้งาน</h3>
             <div className="flex flex-col gap-4">
               {data?.overlays.map((overlay) => (
-                <ResourceCard key={overlay.id} className="flex flex-col justify-between p-5">
-                  <div className="flex justify-between items-start gap-4">
-                    <p className="font-bold text-white truncate">{overlay.name}</p>
+                <div key={overlay.id} className="flex flex-col justify-between border-2 border-border-base bg-surface-card p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className="truncate font-semibold text-ink-base">{overlay.name}</p>
                     <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "ON" : "OFF"}</Badge>
                   </div>
                   <div className="mt-6 flex gap-2">
-                    <button 
+                    <Button 
+                      variant="secondary"
+                      size="sm"
                       onClick={() => void copyUrl(overlay.token)}
-                      className="flex-1 bg-surface-dark border-2 border-border-base min-h-[44px] text-xs font-semibold text-white hover:border-primary hover:text-primary hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-primary transition-all shadow-none hover:shadow-brutal-sm"
+                      className="flex-1"
                     >
-                      Copy URL
-                    </button>
-                    <Link 
-                      href={`/dashboard/overlays/edit?id=${overlay.id}`}
-                      className="bg-surface-dark border-2 border-border-base px-4 min-h-[44px] flex items-center justify-center text-xs font-semibold text-ink-muted hover:text-white hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-primary transition-all shadow-none hover:shadow-brutal-sm"
-                    >
-                      Edit
-                    </Link>
+                      คัดลอก URL
+                    </Button>
+                    <Button variant="secondary" size="sm" asChild>
+                      <Link href={`/dashboard/overlays/edit?id=${overlay.id}`}>แก้ไข</Link>
+                    </Button>
                   </div>
-                </ResourceCard>
+                </div>
               ))}
               {data?.overlays.length === 0 && (
-                <EmptyState title="No active overlays" description="สร้าง Overlay และเปิดใช้งานก่อนนำ URL ไปใช้" />
+                <EmptyState title="ไม่มี Overlay ที่เปิดใช้งาน" description="สร้าง Overlay และเปิดใช้งานก่อนนำ URL ไปใช้" />
               )}
             </div>
           </div>

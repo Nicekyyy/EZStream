@@ -29,8 +29,8 @@ class MockChatMessageDto {
   overlayToken?: string;
 
   @IsOptional()
-  @IsEnum(["tiktok", "youtube"])
-  platform?: "tiktok" | "youtube";
+  @IsEnum(["tiktok", "youtube", "twitch"])
+  platform?: "tiktok" | "youtube" | "twitch";
 
   @IsOptional()
   @IsString()
@@ -121,7 +121,7 @@ export class MockEventsController {
       displayName: dto.username ?? "Mock User",
       message: dto.message ?? "สวัสดีครับ! 🎉",
       avatarUrl: undefined,
-      badges: [],
+      badges: [{ label: "Moderator" }, { label: "VIP" }],
       timestamp: Date.now()
     };
 

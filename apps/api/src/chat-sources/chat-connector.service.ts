@@ -15,30 +15,64 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   private sourceViewerCounts = new Map<string, number>();
   private youtubeParserErrorHandlerInstalled = false;
   private lastTtsByCreator = new Map<string, number>();
-  private googleTtsVoice: string;
+  private googleTtsVoice!: string;
+  private reconnectInterval: NodeJS.Timeout | null = null;
+  private twitchGlobalBadges: any[] = [];
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(REDIS) private readonly redis: any,
     @Inject(QueuesService) private readonly queues: QueuesService,
     @Inject(LiveEventsService) private readonly liveEvents: LiveEventsService,
-    private readonly config: ConfigService
-  ) {
-    this.googleTtsVoice = resolveGoogleTtsVoiceName(this.config.get<string>("GOOGLE_TTS_VOICE"), defaultGoogleTtsVoiceName);
-  }
+    @Inject(ConfigService) private readonly config: ConfigService
+  ) { }
 
   async onModuleInit() {
+    this.googleTtsVoice = resolveGoogleTtsVoiceName(this.config.get<string>("GOOGLE_TTS_VOICE"), defaultGoogleTtsVoiceName);
     this.subscriber = this.redis.duplicate();
     await this.subscriber.subscribe(CHAT_COMMANDS_CHANNEL);
     this.subscriber.on("message", (_channel: string, message: string) => {
       void this.handleCommand(message);
     });
+    this.subscriber.on("error", (error: any) => {
+      console.error("[chat] Redis subscriber error:", error);
+    });
 
-    // Auto-connect all active sources on startup
+    // Auto-connect all active sources on startup and poll for disconnected sources
     void this.autoConnectActiveSources();
+    this.reconnectInterval = setInterval(() => {
+      void this.autoConnectActiveSources();
+    }, 30000);
+
+    void this.fetchTwitchGlobalBadges();
+  }
+
+  private async fetchTwitchGlobalBadges() {
+    try {
+      const res = await fetch("https://api.ivr.fi/v2/twitch/badges/global");
+      if (res.ok) {
+        this.twitchGlobalBadges = await res.json();
+        console.log(`[chat] Fetched Twitch global badges (${this.twitchGlobalBadges.length} sets)`);
+      }
+    } catch (err) {
+      console.warn(`[chat] Failed to fetch Twitch global badges: ${err}`);
+    }
+  }
+
+  private async fetchTwitchChannelBadges(channel: string) {
+    try {
+      const res = await fetch(`https://api.ivr.fi/v2/twitch/badges/channel?login=${channel}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn(`[chat] Failed to fetch Twitch channel badges for ${channel}: ${err}`);
+    }
+    return [];
   }
 
   async onModuleDestroy() {
+    if (this.reconnectInterval) clearInterval(this.reconnectInterval);
     for (const [id] of this.activeChats) {
       await this.disconnectChat(id);
     }
@@ -48,12 +82,14 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   private async autoConnectActiveSources() {
     try {
       const activeSources = await this.prisma.chatSource.findMany({
-        where: { isEnabled: true, status: "CONNECTED" },
+        where: { isEnabled: true },
         include: { overlay: true }
       });
       for (const source of activeSources) {
-        if (source.overlay.isActive) {
-          console.log(`[chat] Auto-reconnecting source: ${source.id} (${source.platform} - ${source.target})`);
+        if (!source.overlay.isActive) continue;
+        const isActive = this.activeChats.has(source.id);
+        if (!isActive && (source.status === "CONNECTED" || source.status === "DISCONNECTED" || source.status === "ERROR")) {
+          console.log(`[chat] Auto-connecting source: ${source.id} (${source.platform} - ${source.target})`);
           await this.connectChat(source.id, source.platform, source.target, source.overlay.token);
         }
       }
@@ -88,6 +124,8 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       void this.connectTikTok(chatSourceId, target, overlayToken);
     } else if (platform === "YOUTUBE") {
       void this.connectYouTube(chatSourceId, target, overlayToken);
+    } else if (platform === "TWITCH") {
+      void this.connectTwitch(chatSourceId, target, overlayToken);
     }
   }
 
@@ -121,11 +159,13 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       ]) {
         if (!this.activeChats.has(chatSourceId)) return;
 
+        const signApiKey = this.config.get<string>("TIKTOK_SIGN_API_KEY");
         const tiktok = new TikTokLiveConnection(username, {
           processInitialData: false,
           fetchRoomInfoOnConnect: false,
           enableExtendedGiftInfo: false,
           connectWithUniqueId: attempt.connectWithUniqueId,
+          signApiKey: signApiKey || undefined,
           wsClientHeaders: {
             Origin: "https://www.tiktok.com"
           }
@@ -151,10 +191,15 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
             displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
             message: msgText,
             avatarUrl: this.resolveTikTokAvatarUrl(data.user),
-            badges: [],
+            badges: this.resolveTikTokBadges(data.user, data),
             timestamp: Date.now()
           };
           void this.publishChatMessage(chatSourceId, overlayToken, message);
+        });
+
+        (tiktok as any).on("error", (error: any) => {
+          if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+          console.error(`[chat] TikTok connection error event: ${error}`);
         });
 
         tiktok.on(WebcastEvent.EMOTE, (data: any) => {
@@ -168,7 +213,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
             displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
             message: msgText,
             avatarUrl: this.resolveTikTokAvatarUrl(data.user),
-            badges: [],
+            badges: this.resolveTikTokBadges(data.user, data),
             timestamp: Date.now()
           };
           void this.publishChatMessage(chatSourceId, overlayToken, message);
@@ -230,17 +275,20 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   private async connectYouTube(chatSourceId: string, target: string, overlayToken: string) {
     const connectionId = Math.random().toString(36).slice(2);
     let run = true;
+    let viewerInterval: NodeJS.Timeout | null = null;
     this.activeChats.set(chatSourceId, {
       connectionId,
       overlayToken,
       disconnect: () => {
         run = false;
+        if (viewerInterval) clearInterval(viewerInterval);
       }
     });
 
     try {
       console.log(`[chat] YouTube: connecting source=${chatSourceId} target="${target}"`);
-      const { Innertube, Parser } = await import("youtubei.js");
+      const { Innertube, Parser, Log } = await import("youtubei.js");
+      Log.setLevel(Log.Level.ERROR);
       this.installYouTubeParserErrorHandler(Parser);
       console.log(`[chat] YouTube: creating Innertube instance...`);
       const yt = await Innertube.create();
@@ -342,7 +390,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
         if (!chatItem) return;
 
         chatItemCount++;
-        
+
         // Match message schema and parse run emoji / text
         const messageText = this.youtubeMessageText(chatItem.message);
         if (!messageText) return;
@@ -358,7 +406,20 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
           displayName: author?.name?.toString() ?? "unknown",
           message: messageText,
           avatarUrl: author?.thumbnails?.[0]?.url ?? undefined,
-          badges: author?.badges?.map((b: any) => b.title).filter((t: any) => typeof t === "string") ?? [],
+          badges: author?.badges?.map((b: any) => {
+            const label = b?.title || b?.tooltip || "Badge";
+            let iconUrl = b?.custom_thumbnail?.[0]?.url || b?.metadata?.image?.thumbnails?.[0]?.url;
+            if (b?.icon_type) {
+              const symbolMap: Record<string, string> = {
+                'MODERATOR': 'build',
+                'OWNER': 'person',
+                'VERIFIED': 'check_circle'
+              };
+              const symbol = symbolMap[b.icon_type] || b.icon_type.toLowerCase();
+              iconUrl = `https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/${symbol}/default/24px.svg`;
+            }
+            return { label: String(label), url: iconUrl ? String(iconUrl) : undefined };
+          }).filter((b: any) => b.label) ?? [],
           timestamp: chatItem.timestamp ? Number(chatItem.timestamp) : Date.now()
         };
         void this.publishChatMessage(chatSourceId, overlayToken, message);
@@ -367,11 +428,14 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       livechat.on("error", async (error: any) => {
         console.error(`[chat] YouTube chat error: ${error}`);
         if (this.isActiveChatConnection(chatSourceId, connectionId)) {
+          if (viewerInterval) clearInterval(viewerInterval);
+          this.activeChats.delete(chatSourceId);
           await this.updateChatSourceStatus(chatSourceId, "ERROR", overlayToken, String(error?.message ?? error));
+          void this.updateViewerCount(chatSourceId, overlayToken, 0);
         }
       });
 
-      let viewerInterval: NodeJS.Timeout | null = null;
+
       const pollViewerCount = async () => {
         if (!run || !this.isActiveChatConnection(chatSourceId, connectionId)) return;
         try {
@@ -434,6 +498,151 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       console.error(`[chat] YouTube connect error: ${error.message}`);
       console.error(`[chat] YouTube connect stack: ${error.stack}`);
       if (this.isActiveChatConnection(chatSourceId, connectionId)) {
+        if (viewerInterval) clearInterval(viewerInterval);
+        this.activeChats.delete(chatSourceId);
+        await this.updateChatSourceStatus(chatSourceId, "ERROR", overlayToken, error.message);
+        void this.updateViewerCount(chatSourceId, overlayToken, 0);
+      }
+    }
+  }
+
+  // ─── Twitch Connector ────────────────────────────────────────────────────────
+
+  private async connectTwitch(chatSourceId: string, target: string, overlayToken: string) {
+    const connectionId = Date.now().toString();
+    const attempt = { connectionId };
+    this.activeChats.set(chatSourceId, {
+      connectionId,
+      overlayToken,
+      disconnect: async () => { } // stub until connected
+    });
+
+    await this.updateChatSourceStatus(chatSourceId, "CONNECTING", overlayToken);
+
+    try {
+      const channel = target.replace(/^@/, "").trim().toLowerCase();
+      if (!channel) throw new Error("Invalid Twitch channel");
+
+      if (this.twitchGlobalBadges.length === 0) {
+        await this.fetchTwitchGlobalBadges();
+      }
+
+      const tmi = await import("tmi.js");
+      const client = new tmi.Client({
+        channels: [channel],
+      });
+
+      let run = true;
+      let viewerInterval: NodeJS.Timeout | null = null;
+      let channelBadges = await this.fetchTwitchChannelBadges(channel);
+
+      const getTwitchBadge = (key: string, version: string) => {
+        const cSet = channelBadges.find((b: any) => b.set_id === key);
+        const cVer = cSet?.versions?.find((v: any) => v.id === version);
+        if (cVer) return { label: cVer.title, url: cVer.image_url_4x || cVer.image_url_2x || cVer.image_url_1x };
+
+        const gSet = this.twitchGlobalBadges.find((b: any) => b.set_id === key);
+        const gVer = gSet?.versions?.find((v: any) => v.id === version);
+        if (gVer) return { label: gVer.title, url: gVer.image_url_4x || gVer.image_url_2x || gVer.image_url_1x };
+
+        return { label: key };
+      };
+
+      client.on("message", (channel, tags, message, self) => {
+        if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+
+        let parsedMessage = message;
+        if (tags.emotes) {
+          const chars = Array.from(message);
+          const replacements: { start: number; end: number; id: string }[] = [];
+          for (const [id, positions] of Object.entries(tags.emotes)) {
+            for (const pos of (positions as string[])) {
+              const [start, end] = pos.split("-").map(Number);
+              replacements.push({ start, end, id });
+            }
+          }
+          replacements.sort((a, b) => b.start - a.start);
+          for (const { start, end, id } of replacements) {
+            const url = `https://static-cdn.jtvnw.net/emoticons/v2/${id}/default/dark/1.0`;
+            chars.splice(start, end - start + 1, `<img src="${url}">`);
+          }
+          parsedMessage = chars.join("");
+        }
+
+        const twitchBadges = tags.badges ? Object.keys(tags.badges).map(key => getTwitchBadge(key, (tags.badges as any)[key])) : [];
+        const unifiedMessage: UnifiedChatMessage = {
+          id: tags.id ?? `twitch-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          platform: "twitch",
+          username: tags.username ?? "unknown",
+          displayName: tags["display-name"] ?? tags.username ?? "unknown",
+          message: parsedMessage,
+          avatarUrl: undefined, // tmi.js doesn't provide avatar URL by default
+          badges: twitchBadges,
+          timestamp: Date.now()
+        };
+        void this.publishChatMessage(chatSourceId, overlayToken, unifiedMessage);
+      });
+
+      client.on("disconnected", () => {
+        if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        console.log(`[chat] Twitch disconnected: ${channel}`);
+        this.activeChats.delete(chatSourceId);
+        void this.updateChatSourceStatus(chatSourceId, "DISCONNECTED", overlayToken);
+        void this.updateViewerCount(chatSourceId, overlayToken, 0);
+        if (viewerInterval) clearInterval(viewerInterval);
+      });
+
+      (client as any).on("error", (error: any) => {
+        if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        console.error(`[chat] Twitch connection error event: ${error}`);
+      });
+
+      await client.connect();
+
+      if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) {
+        void client.disconnect();
+        return;
+      }
+
+      console.log(`[chat] Twitch connected: ${channel} (${attempt.connectionId})`);
+      await this.updateChatSourceStatus(chatSourceId, "CONNECTED", overlayToken);
+
+      const pollViewerCount = async () => {
+        if (!run || !this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+        try {
+          const res = await fetch(`https://decapi.me/twitch/viewercount/${channel}`);
+          if (!res.ok) return;
+          const text = await res.text();
+          const count = parseInt(text, 10);
+          if (!isNaN(count)) {
+            void this.updateViewerCount(chatSourceId, overlayToken, count);
+          }
+        } catch (err: any) {
+          console.warn(`[chat] Twitch: failed to poll viewer count: ${err.message}`);
+        }
+      };
+
+      void pollViewerCount();
+      viewerInterval = setInterval(() => {
+        void pollViewerCount();
+      }, 30000);
+
+      this.activeChats.set(chatSourceId, {
+        connectionId,
+        overlayToken,
+        disconnect: async () => {
+          run = false;
+          if (viewerInterval) clearInterval(viewerInterval);
+          console.log(`[chat] Twitch: disconnect requested for source=${chatSourceId}`);
+          try {
+            void client.disconnect();
+          } catch (e) { }
+          void this.updateViewerCount(chatSourceId, overlayToken, 0);
+        }
+      });
+    } catch (error: any) {
+      console.error(`[chat] Twitch connect error: ${error.message}`);
+      if (this.isActiveChatConnection(chatSourceId, connectionId)) {
         this.activeChats.delete(chatSourceId);
         await this.updateChatSourceStatus(chatSourceId, "ERROR", overlayToken, error.message);
         void this.updateViewerCount(chatSourceId, overlayToken, 0);
@@ -444,52 +653,67 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   // ─── Rules and Messages Execution ──────────────────────────────────────────
 
   private async publishChatMessage(chatSourceId: string, overlayToken: string, message: UnifiedChatMessage) {
-    await this.redis.publish(
-      REALTIME_CHANNEL,
-      JSON.stringify({
-        room: `overlay-token:${overlayToken}`,
-        event: "chat.message",
-        payload: message
-      })
-    );
+    try {
+      const truncatedMessage = {
+        ...message,
+        username: message.username.slice(0, 100),
+        displayName: message.displayName.slice(0, 100),
+        message: message.message.slice(0, 1000)
+      };
 
-    const source = await this.prisma.chatSource.findUnique({
-      where: { id: chatSourceId },
-      include: { overlay: true }
-    });
-    if (!source || !source.isEnabled || !source.overlay.isActive) return;
+      await this.redis.publish(
+        REALTIME_CHANNEL,
+        JSON.stringify({
+          room: `overlay-token:${overlayToken}`,
+          event: "chat.message",
+          payload: truncatedMessage
+        })
+      );
 
-    const payload = {
-      id: message.id,
-      platform: message.platform,
-      username: message.username,
-      displayName: message.displayName,
-      message: message.message,
-      avatarUrl: message.avatarUrl,
-      badges: message.badges ?? [],
-      timestamp: message.timestamp,
-      chatSourceId,
-      overlayId: source.overlayId,
-      overlayToken: source.overlay.token
-    };
+      const source = await this.prisma.chatSource.findUnique({
+        where: { id: chatSourceId },
+        include: { overlay: true }
+      });
+      if (!source || !source.isEnabled || !source.overlay.isActive) return;
 
-    await this.liveEvents.processEvent(source.creatorId, "live.chat.message", payload);
+      const payload = {
+        id: truncatedMessage.id,
+        platform: truncatedMessage.platform,
+        username: truncatedMessage.username,
+        displayName: truncatedMessage.displayName,
+        message: truncatedMessage.message,
+        avatarUrl: truncatedMessage.avatarUrl,
+        badges: truncatedMessage.badges ?? [],
+        timestamp: truncatedMessage.timestamp,
+        chatSourceId,
+        overlayId: source.overlayId,
+        overlayToken: source.overlay.token
+      };
+
+      await this.liveEvents.processEvent(source.creatorId, "live.chat.message", payload);
+    } catch (error) {
+      console.error(`[chat] Error publishing chat message: ${error}`);
+    }
   }
 
   private async updateChatSourceStatus(id: string, status: string, overlayToken: string, errorMessage: string | null = null) {
-    await this.prisma.chatSource.update({
-      where: { id },
-      data: { status: status as any, errorMessage, ...(status === "CONNECTED" ? { lastConnectedAt: new Date() } : {}) }
-    }).catch(() => undefined);
+    try {
+      await this.prisma.chatSource.update({
+        where: { id },
+        data: { status: status as any, errorMessage, ...(status === "CONNECTED" ? { lastConnectedAt: new Date() } : {}) }
+      });
 
-    await this.redis.publish(
-      REALTIME_CHANNEL,
-      JSON.stringify({
-        room: `overlay-token:${overlayToken}`,
-        event: "chat-source.status",
-        payload: { id, status, errorMessage }
-      })
-    );
+      await this.redis.publish(
+        REALTIME_CHANNEL,
+        JSON.stringify({
+          room: `overlay-token:${overlayToken}`,
+          event: "chat-source.status",
+          payload: { id, status, errorMessage }
+        })
+      );
+    } catch (error) {
+      console.error(`[chat] Error updating chat source status: ${error}`);
+    }
   }
 
 
@@ -543,6 +767,54 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       this.firstImageUrl(value.profilePictureLarge) ??
       this.firstImageUrl(value.avatarThumb)
     );
+  }
+
+  private extractBadgeUrls(obj: any): string[] {
+    const urls: string[] = [];
+    const visited = new Set();
+    
+    const traverse = (o: any) => {
+      if (!o || typeof o !== "object") return;
+      if (visited.has(o)) return;
+      visited.add(o);
+
+      if (Array.isArray(o)) {
+        o.forEach(traverse);
+        return;
+      }
+      
+      const url = this.firstImageUrl(o);
+      if (url) {
+        urls.push(url);
+      }
+      
+      // If no direct URL, search child properties
+      for (const key of Object.keys(o)) {
+        // Skip some obvious non-badge object properties if needed, but safe to traverse
+        traverse(o[key]);
+      }
+    };
+    
+    traverse(obj);
+    return [...new Set(urls)];
+  }
+
+  private resolveTikTokBadges(user: any, data?: any) {
+    if (!user && !data) return [];
+    
+    const u = user || {};
+    const d = data || {};
+
+    const list1 = Array.isArray(u.badgeImageList) ? u.badgeImageList : Array.isArray(d.badgeImageList) ? d.badgeImageList : [];
+    const list2 = Array.isArray(u.mediaBadgeImageList) ? u.mediaBadgeImageList : Array.isArray(d.mediaBadgeImageList) ? d.mediaBadgeImageList : [];
+    const list3 = Array.isArray(u.badges) ? u.badges : Array.isArray(d.badges) ? d.badges : [];
+    const list4 = Array.isArray(u.userBadges) ? u.userBadges : Array.isArray(d.userBadges) ? d.userBadges : [];
+    const list5 = Array.isArray(u.newUserBadges) ? u.newUserBadges : Array.isArray(d.newUserBadges) ? d.newUserBadges : [];
+    
+    const allBadgeObjects = [...list1, ...list2, ...list3, ...list4, ...list5];
+    const urls = this.extractBadgeUrls(allBadgeObjects);
+    
+    return urls.map(url => ({ label: "Badge", url }));
   }
 
   private tiktokEmoteUrl(emote: any) {
@@ -606,61 +878,68 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async updateViewerCount(chatSourceId: string, overlayToken: string, count: number) {
-    this.sourceViewerCounts.set(chatSourceId, count);
+    try {
+      this.sourceViewerCounts.set(chatSourceId, count);
 
-    // Get the source details
-    const source = await this.prisma.chatSource.findUnique({
-      where: { id: chatSourceId }
-    });
-    if (!source) return;
+      // Get the source details
+      const source = await this.prisma.chatSource.findUnique({
+        where: { id: chatSourceId }
+      });
+      if (!source) return;
 
-    // Find all active VIEWER_COUNT_WIDGETs on the overlay
-    const widgets = await this.prisma.widget.findMany({
-      where: {
-        overlayId: source.overlayId,
-        type: "VIEWER_COUNT_WIDGET",
-        isEnabled: true
-      }
-    });
-    if (widgets.length === 0) return;
+      // Find all active VIEWER_COUNT_WIDGETs on the overlay
+      const widgets = await this.prisma.widget.findMany({
+        where: {
+          overlayId: source.overlayId,
+          type: "VIEWER_COUNT_WIDGET",
+          isEnabled: true
+        }
+      });
+      if (widgets.length === 0) return;
 
-    // Get all chat sources on the overlay to sum the viewer counts
-    const overlaySources = await this.prisma.chatSource.findMany({
-      where: { overlayId: source.overlayId, isEnabled: true }
-    });
-
-    let youtube = 0;
-    let tiktok = 0;
-
-    for (const s of overlaySources) {
-      const sCount = this.sourceViewerCounts.get(s.id) ?? 0;
-      if (s.platform === "YOUTUBE") {
-        youtube += sCount;
-      } else if (s.platform === "TIKTOK") {
-        tiktok += sCount;
-      }
-    }
-
-    const total = youtube + tiktok;
-
-    const state = { youtube, tiktok, total };
-
-    for (const widget of widgets) {
-      await this.prisma.widgetState.upsert({
-        where: { widgetId: widget.id },
-        update: { state },
-        create: { widgetId: widget.id, state }
+      // Get all chat sources on the overlay to sum the viewer counts
+      const overlaySources = await this.prisma.chatSource.findMany({
+        where: { overlayId: source.overlayId, isEnabled: true }
       });
 
-      // Broadcast widget update to overlays
-      await this.redis.publish(
-        "ezstream:realtime",
-        JSON.stringify({
-          room: `overlay-token:${overlayToken}`,
-          event: "widget.updated",
-          payload: { widgetId: widget.id }
-        })
-      );
+      let youtube = 0;
+      let tiktok = 0;
+      let twitch = 0;
+
+      for (const s of overlaySources) {
+        const sCount = this.sourceViewerCounts.get(s.id) ?? 0;
+        if (s.platform === "YOUTUBE") {
+          youtube += sCount;
+        } else if (s.platform === "TIKTOK") {
+          tiktok += sCount;
+        } else if (s.platform === "TWITCH") {
+          twitch += sCount;
+        }
+      }
+
+      const total = youtube + tiktok + twitch;
+
+      const state = { youtube, tiktok, twitch, total };
+
+      for (const widget of widgets) {
+        await this.prisma.widgetState.upsert({
+          where: { widgetId: widget.id },
+          update: { state },
+          create: { widgetId: widget.id, state }
+        });
+
+        // Broadcast widget update to overlays
+        await this.redis.publish(
+          "ezstream:realtime",
+          JSON.stringify({
+            room: `overlay-token:${overlayToken}`,
+            event: "widget.updated",
+            payload: { widgetId: widget.id }
+          })
+        );
+      }
+    } catch (error) {
+      console.error(`[chat] Error updating viewer count: ${error}`);
     }
   }
 }

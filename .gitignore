@@ -50,6 +50,10 @@ coverage
 # Tools
 .serena
 .agents/
+.impeccable/
 skills-lock.json
 .turbo
 .nx/cache
+
+# Generated outputs
+graphify-out/

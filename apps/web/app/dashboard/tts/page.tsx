@@ -5,11 +5,11 @@ import { defaultGoogleTtsVoiceName, googleTtsVoices, resolveGoogleTtsVoiceName }
 import type { GoogleTtsVoiceName } from "@ezstream/shared";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
+import Link from "next/link";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
-import { Badge, EmptyState, Field, Input, Notice, Select, Textarea } from "../../../components/ui-kit";
-import { API_URL, APP_URL, api } from "../../../lib/api";
-import { copyText } from "../../../lib/clipboard";
+import { Badge, EmptyState, Field, Input, LoadingCards, Notice, PageActions, Select, Textarea } from "../../../components/ui-kit";
+import { API_URL, api } from "../../../lib/api";
 
 type Overlay = { id: string; name: string; token: string };
 type TtsWidget = { id: string; name: string; type: string; overlayId: string | null; isEnabled: boolean; visibility?: boolean; config?: unknown };
@@ -73,6 +73,9 @@ export default function TtsPage() {
   const [pitch, setPitch] = useState(1);
   const [volume, setVolume] = useState(1);
   const [includeSenderName, setIncludeSenderName] = useState(true);
+  const [ignoreCommands, setIgnoreCommands] = useState(true);
+  const [maxMessageLength, setMaxMessageLength] = useState(300);
+  const [bannedWords, setBannedWords] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -155,6 +158,12 @@ export default function TtsPage() {
     setWidgetId(nextWidgetId);
     setVoice(resolveGoogleTtsVoiceName(nextConfig.voice, defaultGoogleTtsVoiceName));
     setIncludeSenderName(nextConfig.includeSenderName !== false);
+    setSpeed(typeof nextConfig.speed === "number" ? nextConfig.speed : 1);
+    setPitch(typeof nextConfig.pitch === "number" ? nextConfig.pitch : 1);
+    setVolume(typeof nextConfig.volume === "number" ? nextConfig.volume : 1);
+    setIgnoreCommands(nextConfig.ignoreCommands !== false);
+    setMaxMessageLength(typeof nextConfig.maxMessageLength === "number" ? nextConfig.maxMessageLength : 300);
+    setBannedWords(typeof nextConfig.bannedWords === "string" ? nextConfig.bannedWords : "");
   }
 
   useEffect(() => {
@@ -187,9 +196,6 @@ export default function TtsPage() {
 
   const selectedWidget = widgets.find((widget) => widget.id === widgetId);
   const selectedWidgetConfig = configObject(selectedWidget);
-  const selectedOverlay = overlays.find((overlay) => overlay.id === selectedWidget?.overlayId);
-  const overlayUrl = selectedOverlay && APP_URL ? `${APP_URL}/overlay?token=${selectedOverlay.token}` : "";
-  const previewUrl = selectedOverlay && APP_URL ? `${APP_URL}/overlay/preview?token=${selectedOverlay.token}&debug=1` : "";
   const canSubmit = Boolean(text.trim() && widgetId && !submitting);
   const latestJobs = useMemo(() => jobs.slice(0, 20), [jobs]);
 
@@ -199,6 +205,12 @@ export default function TtsPage() {
     setWidgetId(nextWidgetId);
     setVoice(resolveGoogleTtsVoiceName(nextConfig.voice, defaultGoogleTtsVoiceName));
     setIncludeSenderName(nextConfig.includeSenderName !== false);
+    setSpeed(typeof nextConfig.speed === "number" ? nextConfig.speed : 1);
+    setPitch(typeof nextConfig.pitch === "number" ? nextConfig.pitch : 1);
+    setVolume(typeof nextConfig.volume === "number" ? nextConfig.volume : 1);
+    setIgnoreCommands(nextConfig.ignoreCommands !== false);
+    setMaxMessageLength(typeof nextConfig.maxMessageLength === "number" ? nextConfig.maxMessageLength : 300);
+    setBannedWords(typeof nextConfig.bannedWords === "string" ? nextConfig.bannedWords : "");
   }
 
   async function submit(event: FormEvent) {
@@ -229,7 +241,7 @@ export default function TtsPage() {
     try {
       await api<TtsWidget>(`/widgets/${selectedWidget.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ config: { ...selectedWidgetConfig, voice, speed, pitch, volume, includeSenderName } })
+        body: JSON.stringify({ config: { ...selectedWidgetConfig, voice, speed, pitch, volume, includeSenderName, ignoreCommands, maxMessageLength, bannedWords } })
       });
       setMessage("บันทึกค่า TTS แล้ว");
       await load();
@@ -240,30 +252,32 @@ export default function TtsPage() {
     }
   }
 
-  async function copyUrl(url: string, label: string) {
-    const copied = await copyText(url);
-    if (copied) {
-      setError("");
-      setMessage(`คัดลอก${label}แล้ว`);
-    } else {
-      setMessage("");
-      setError(`คัดลอก${label}ไม่สำเร็จ`);
-    }
-  }
-
   return (
     <DashboardShell title="TTS">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <ResourceCard>
-          <form onSubmit={submit} className="grid gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-white">ทดสอบเสียงและค่าเริ่มต้น</h2>
-              <p className="mt-1 text-sm text-slate-400">เลือก TTS widget แล้วส่งข้อความทดสอบไปยัง overlay</p>
-            </div>
+      <PageActions>
+        <p className="max-w-2xl text-sm leading-6 text-slate-400">ทดสอบเสียงพูด เลือกเสียงที่ชอบ และบันทึกเป็นค่าเริ่มต้นสำหรับ TTS widget แต่ละตัวที่ใช้งานอยู่</p>
+      </PageActions>
+
+      <div className="grid gap-4">
+        {loading ? (
+          <LoadingCards count={1} />
+        ) : widgets.length === 0 ? (
+          <EmptyState 
+            title="ยังไม่มี TTS Widget" 
+            description="คุณต้องสร้าง TTS Widget อย่างน้อย 1 ตัวในหน้า Widgets เพื่อเริ่มต้นใช้งานและตั้งค่าเสียง"
+            action={
+              <Button asChild className="bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold">
+                <Link href="/dashboard/widgets/new">สร้าง TTS Widget</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <ResourceCard>
+            <form onSubmit={submit} className="grid gap-6">
 
             <Field label="TTS Widget">
               <Select id="tts-widget" value={widgetId} onChange={(event) => selectWidget(event.target.value)} disabled={loading}>
-                {widgets.length ? widgets.map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>) : <option value="">No TTS widget</option>}
+                {widgets.length ? widgets.map((widget) => <option key={widget.id} value={widget.id}>{widget.name}</option>) : <option value="">ไม่มี TTS widget</option>}
               </Select>
               {selectedWidget ? (
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -279,14 +293,11 @@ export default function TtsPage() {
               </Select>
             </Field>
 
-            <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-200">
-              <span>อ่านชื่อผู้ส่งก่อนข้อความแชท</span>
-              <input className="h-4 w-4 accent-indigo-500" type="checkbox" checked={includeSenderName} onChange={(event) => setIncludeSenderName(event.target.checked)} />
-            </label>
-
-            <Field label="ข้อความทดสอบ" hint={`${text.length}/300 characters`}>
-              <Textarea id="tts-text" className="min-h-28" maxLength={300} value={text} onChange={(event) => setText(event.target.value)} />
-            </Field>
+            <ToggleField 
+              label="อ่านชื่อผู้ส่งก่อนข้อความแชท" 
+              isChecked={includeSenderName} 
+              onChange={setIncludeSenderName} 
+            />
 
             <div className="grid gap-3 sm:grid-cols-3">
               <RangeField label="Speed" min="0.5" max="2" step="0.1" value={speed} onChange={setSpeed} />
@@ -294,47 +305,59 @@ export default function TtsPage() {
               <RangeField label="Volume" min="0" max="1" step="0.1" value={volume} onChange={setVolume} />
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={!canSubmit}>{submitting ? "Sending..." : "Test TTS"}</Button>
-              <Button variant="secondary" type="button" disabled={!selectedWidget || savingVoice} onClick={() => void saveVoiceDefault()}>
-                {savingVoice ? "Saving..." : "Save default"}
+            <div className="border-t-2 border-border-base pt-6 mt-2 grid gap-6">
+              <h3 className="text-base font-semibold text-white">การกรองข้อความ (Filtering)</h3>
+              
+              <ToggleField 
+                label="ละเว้นข้อความที่เป็นคำสั่ง (ขึ้นต้นด้วย ! หรือ /)" 
+                isChecked={ignoreCommands} 
+                onChange={setIgnoreCommands} 
+              />
+              
+              <Field label="ความยาวข้อความสูงสุด" hint="หากเกินจะตัดส่วนที่เกินทิ้ง">
+                <Input type="number" min={1} max={1000} value={maxMessageLength} onChange={(event) => setMaxMessageLength(Number(event.target.value) || 300)} />
+              </Field>
+
+              <Field label="คำที่ต้องการข้าม / ซ่อนคำหยาบ" hint="คั่นด้วยเครื่องหมายจุลภาค (,) เช่น คำหยาบ1,คำหยาบ2 (TTS จะข้ามคำเหล่านี้ไม่อ่านออกเสียง)">
+                <Textarea value={bannedWords} onChange={(event) => setBannedWords(event.target.value)} placeholder="คำหยาบ1,คำหยาบ2,คำที่ไม่อยากให้อ่าน..." className="min-h-20" />
+              </Field>
+            </div>
+
+            <div className="border-t-2 border-border-base pt-6 mt-2 grid gap-6">
+              <h3 className="text-base font-semibold text-white">ทดสอบเสียง</h3>
+              <Field label="ข้อความทดสอบ" hint={`${text.length}/300 characters`}>
+                <Textarea id="tts-text" className="min-h-20" maxLength={300} value={text} onChange={(event) => setText(event.target.value)} />
+              </Field>
+            </div>
+
+            <div className="flex flex-wrap gap-4 mt-2 border-t-2 border-border-base pt-6">
+              <Button disabled={!canSubmit} className="bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold px-6 py-2.5">
+                {submitting ? "กำลังส่ง..." : "ทดสอบ TTS"}
+              </Button>
+              <Button type="button" disabled={!selectedWidget || savingVoice} onClick={() => void saveVoiceDefault()} className="bg-surface-dark text-white border-2 border-border-base hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold px-6 py-2.5">
+                {savingVoice ? "กำลังบันทึก..." : "บันทึกเป็นค่าเริ่มต้น"}
               </Button>
             </div>
             {message ? <Notice tone="success">{message}</Notice> : null}
             {error ? <Notice tone="error">{error}</Notice> : null}
           </form>
         </ResourceCard>
-
-        <ResourceCard>
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-slate-200">Overlay URL for OBS</p>
-              {overlayUrl ? <p className="mt-1 break-all text-sm text-slate-400">{overlayUrl}</p> : <p className="mt-1 text-sm text-slate-500">เลือก TTS widget ก่อน</p>}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {overlayUrl ? <Button size="sm" variant="secondary" onClick={() => void copyUrl(overlayUrl, " Overlay URL")} type="button">คัดลอก Overlay URL</Button> : null}
-              {previewUrl ? (
-                <>
-                  <Button size="sm" variant="secondary" onClick={() => void copyUrl(previewUrl, " Preview URL")} type="button">คัดลอก Preview URL</Button>
-                  <Button size="sm" variant="ghost" asChild><a href={previewUrl} target="_blank" rel="noreferrer">Open preview</a></Button>
-                </>
-              ) : null}
-            </div>
-            <p className="text-sm leading-6 text-slate-400">Google Cloud Text-to-Speech สร้าง MP3 แล้วให้เครื่องที่เปิด overlay เล่นเสียงนั้น</p>
-            <p className="text-xs text-slate-500">Current voice: {voice}</p>
-          </div>
-        </ResourceCard>
+        )}
       </div>
 
-      <section className="mt-5 grid gap-3">
-        <h2 className="text-lg font-semibold text-white">Recent TTS jobs</h2>
+      <section className="mt-8 grid gap-4">
+        <h2 className="text-lg font-bold text-white mb-2">ประวัติการพูด TTS ล่าสุด</h2>
         {latestJobs.length ? latestJobs.map((job) => (
-          <ResourceCard key={job.id}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <ResourceCard key={job.id} className="p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <p className="break-words font-medium text-white">{job.text}</p>
-                <p className="mt-1 text-sm text-slate-400">{job.widget?.name ?? "No widget"} · {job.voice} · {new Date(job.createdAt).toLocaleString()}</p>
-                {job.errorMessage ? <p className="mt-1 text-sm text-rose-300">{job.errorMessage}</p> : null}
+                <p className="break-words font-medium text-white text-base">{job.text}</p>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-bold text-ink-subtle">
+                  <p><span className="text-ink-faint mr-1.5">WIDGET</span> {job.widget?.name ?? "ไม่พบ widget"}</p>
+                  <p><span className="text-ink-faint mr-1.5">VOICE</span> {job.voice}</p>
+                  <p><span className="text-ink-faint mr-1.5">TIME</span> {new Date(job.createdAt).toLocaleString()}</p>
+                </div>
+                {job.errorMessage ? <p className="mt-3 text-sm font-medium text-rose-400">{job.errorMessage}</p> : null}
               </div>
               <Badge tone={statusTone[job.status]}>{job.status}</Badge>
             </div>
@@ -360,13 +383,48 @@ function RangeField({
   step: string;
   value: number;
 }) {
+  const percent = ((value - Number(min)) / (Number(max) - Number(min))) * 100;
+  
   return (
-    <label className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm text-slate-300">
-      <span className="flex justify-between gap-3">
-        {label}
-        <span className="text-xs text-slate-500">{value.toFixed(1)}</span>
-      </span>
-      <Input className="mt-2 h-2 px-0 accent-indigo-500" type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    <div className="flex flex-col gap-2">
+      <div className="flex justify-between items-center text-xs font-semibold text-ink-muted">
+        <span>{label}</span>
+        <span className="text-primary">{value.toFixed(1)}</span>
+      </div>
+      <div className="relative flex h-8 w-full items-center border-2 border-border-base bg-surface-dark">
+        <div className="absolute inset-y-0 left-0 bg-primary border-r-2 border-black" style={{ width: `${percent}%` }} />
+        <input 
+          className="absolute inset-0 w-full cursor-pointer opacity-0" 
+          type="range" min={min} max={max} step={step} value={value} 
+          onChange={(event) => onChange(Number(event.target.value))} 
+        />
+      </div>
+    </div>
+  );
+}
+
+function ToggleField({
+  label,
+  isChecked,
+  onChange,
+}: {
+  label: string;
+  isChecked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className={`flex cursor-pointer items-center justify-between gap-4 border-2 p-3 transition-colors duration-200 ${
+      isChecked ? "border-primary bg-surface-dark" : "border-border-base bg-surface-card hover:border-border-faint"
+    }`}>
+      <span className="text-sm font-semibold text-white">{label}</span>
+      <div className={`relative flex h-7 w-14 shrink-0 items-center border-2 transition-colors duration-200 ${
+        isChecked ? "border-primary bg-primary" : "border-ink-base bg-surface-dark"
+      }`}>
+        <div className={`h-4 w-4 border-2 transition-transform duration-200 ${
+          isChecked ? "translate-x-[32px] border-black bg-white" : "translate-x-[2px] border-transparent bg-ink-muted"
+        }`} />
+      </div>
+      <input checked={isChecked} className="sr-only" onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
   );
 }

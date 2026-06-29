@@ -48,6 +48,7 @@ enum TtsJobStatus {
 enum ChatPlatform {
   TIKTOK
   YOUTUBE
+  TWITCH
 }
 
 enum ChatSourceStatus {

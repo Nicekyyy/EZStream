@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, useMemo } from "react";
 import { io, type Socket } from "socket.io-client";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
-import { renderChatMessageText } from "../../../components/widget-renderer";
+import { renderChatMessageText, WidgetRenderer, type OverlayWidget } from "../../../components/widget-renderer";
+import { TiktokIcon, YoutubeIcon, TwitchIcon } from "../../../components/icons";
 import { API_URL, api } from "../../../lib/api";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 
@@ -12,7 +13,7 @@ type Overlay = { id: string; name: string; token: string };
 type EventLog = { id: string; eventType: string; payload: unknown; createdAt: string };
 type ChatSource = {
   id: string;
-  platform: "TIKTOK" | "YOUTUBE";
+  platform: "TIKTOK" | "YOUTUBE" | "TWITCH";
   target: string;
   label: string | null;
   status: "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "ERROR";
@@ -22,7 +23,7 @@ type ChatSource = {
   overlay?: { id: string; name: string; token: string };
 };
 
-const platformLabel: Record<string, string> = { TIKTOK: "TikTok", YOUTUBE: "YouTube" };
+const platformLabel: Record<string, string> = { TIKTOK: "TikTok", YOUTUBE: "YouTube", TWITCH: "Twitch" };
 const statusColor: Record<string, string> = {
   DISCONNECTED: "bg-slate-600",
   CONNECTING: "bg-amber-500 animate-pulse",
@@ -31,18 +32,9 @@ const statusColor: Record<string, string> = {
 };
 
 function PlatformIcon({ platform }: { platform: UnifiedChatMessage["platform"] }) {
-  const isTikTok = platform === "tiktok";
-  return (
-    <span
-      aria-label={isTikTok ? "TikTok" : "YouTube"}
-      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none text-white ${
-        isTikTok ? "bg-slate-900 ring-1 ring-cyan-300" : "bg-red-600"
-      }`}
-      title={isTikTok ? "TikTok" : "YouTube"}
-    >
-      {isTikTok ? "♪" : "▶"}
-    </span>
-  );
+  if (platform === "tiktok") return <TiktokIcon className="h-4 w-4 shrink-0 drop-shadow-sm" />;
+  if (platform === "twitch") return <TwitchIcon className="h-4 w-4 shrink-0 drop-shadow-sm" />;
+  return <YoutubeIcon className="h-4 w-4 shrink-0 drop-shadow-sm" />;
 }
 
 function objectValue(value: unknown) {
@@ -62,7 +54,8 @@ function chatMessageFromEvent(event: EventLog): UnifiedChatMessage | null {
   const payload = objectValue(event.payload);
   const message = stringValue(payload.message);
   if (!message) return null;
-  const platform = payload.platform === "youtube" ? "youtube" : "tiktok";
+  const p = stringValue(payload.platform);
+  const platform = p === "youtube" ? "youtube" : p === "twitch" ? "twitch" : "tiktok";
   const username = stringValue(payload.username) ?? "unknown";
   const displayName = stringValue(payload.displayName) ?? username;
 
@@ -73,7 +66,7 @@ function chatMessageFromEvent(event: EventLog): UnifiedChatMessage | null {
     displayName,
     message,
     avatarUrl: stringValue(payload.avatarUrl),
-    badges: Array.isArray(payload.badges) ? payload.badges.filter((item): item is string => typeof item === "string") : [],
+    badges: Array.isArray(payload.badges) ? payload.badges.map((b: any) => ({ label: typeof b === "string" ? b : String(b.label || ""), url: b.url ? String(b.url) : undefined })) : [],
     timestamp: numberValue(payload.timestamp) ?? new Date(event.createdAt).getTime()
   };
 }
@@ -88,14 +81,16 @@ export default function ChatPage() {
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [sources, setSources] = useState<ChatSource[]>([]);
   const [chatMessages, setChatMessages] = useState<UnifiedChatMessage[]>([]);
-  const [platform, setPlatform] = useState<"TIKTOK" | "YOUTUBE">("TIKTOK");
+  const [platform, setPlatform] = useState<"TIKTOK" | "YOUTUBE" | "TWITCH">("TIKTOK");
   const [target, setTarget] = useState("");
   const [label, setLabel] = useState("");
   const [overlayId, setOverlayId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<Record<string, string>>({});
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const socketRef = useRef<Socket | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     const [nextOverlays, nextSources, nextEvents] = await Promise.all([
@@ -110,8 +105,12 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    void load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load data"));
+    void load()
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load data"))
+      .finally(() => setIsPageLoading(false));
   }, []);
+
+  const overlayTokens = useMemo(() => overlays.map(o => o.token).sort().join(","), [overlays]);
 
   // Connect to Socket.IO for live chat preview
   useEffect(() => {
@@ -120,8 +119,9 @@ export default function ChatPage() {
 
     socket.on("connect", () => {
       // Join all overlay rooms
-      for (const overlay of overlays) {
-        socket.emit("overlay.join", { token: overlay.token });
+      const tokens = overlayTokens.split(",").filter(Boolean);
+      for (const token of tokens) {
+        socket.emit("overlay.join", { token });
       }
     });
 
@@ -139,16 +139,34 @@ export default function ChatPage() {
       socket.close();
       socketRef.current = null;
     };
-  }, [overlays]);
+  }, [overlayTokens]);
 
-  // Auto-scroll chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+  const mockWidget: OverlayWidget = {
+    id: "preview",
+    name: "Chat Preview",
+    type: "CHAT_WIDGET",
+    positionX: 0,
+    positionY: 0,
+    width: "100%" as unknown as number,
+    height: "100%" as unknown as number,
+    zIndex: 1,
+    visibility: true,
+    config: {
+      showAvatar: true,
+      showBadges: true,
+      badgesPosition: "before",
+      theme: "modern",
+      align: "left",
+      direction: "down",
+      showEmptyState: true,
+      order: "newest-bottom"
+    }
+  };
 
   async function createSource(event: FormEvent) {
     event.preventDefault();
-    if (!target.trim() || !overlayId) return;
+    if (!target.trim() || !overlayId || isSubmitting) return;
+    setIsSubmitting(true);
     setError("");
     setMessage("");
     try {
@@ -162,46 +180,60 @@ export default function ChatPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "สร้าง Chat Source ไม่สำเร็จ");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   async function connectSource(id: string) {
     setError("");
+    setActionLoading(prev => ({ ...prev, [id]: "CONNECTING" }));
     try {
-      await api(`/chat-sources/${id}/connect`, { method: "POST" });
+      setSources(prev => prev.map(s => s.id === id ? { ...s, status: "CONNECTING", errorMessage: null } : s));
       setMessage("กำลังเชื่อมต่อ...");
-      await load();
+      await api(`/chat-sources/${id}/connect`, { method: "POST" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "เชื่อมต่อไม่สำเร็จ");
+      await load();
+    } finally {
+      setActionLoading(prev => { const next = { ...prev }; delete next[id]; return next; });
     }
   }
 
   async function disconnectSource(id: string) {
     setError("");
+    setActionLoading(prev => ({ ...prev, [id]: "DISCONNECTING" }));
     try {
+      setMessage("กำลังยกเลิกการเชื่อมต่อ...");
       await api(`/chat-sources/${id}/disconnect`, { method: "POST" });
+      setSources(prev => prev.map(s => s.id === id ? { ...s, status: "DISCONNECTED", errorMessage: null } : s));
       setMessage("ยกเลิกการเชื่อมต่อแล้ว");
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "ยกเลิกการเชื่อมต่อไม่สำเร็จ");
+      await load();
+    } finally {
+      setActionLoading(prev => { const next = { ...prev }; delete next[id]; return next; });
     }
   }
 
   async function deleteSource(id: string) {
     setError("");
+    setActionLoading(prev => ({ ...prev, [id]: "DELETING" }));
     try {
       await api(`/chat-sources/${id}`, { method: "DELETE" });
       setMessage("ลบ Chat Source แล้ว");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ");
+    } finally {
+      setActionLoading(prev => { const next = { ...prev }; delete next[id]; return next; });
     }
   }
 
   async function sendMockChat() {
     const overlay = overlays[0];
     if (!overlay) return;
-    const platforms: Array<"tiktok" | "youtube"> = ["tiktok", "youtube"];
+    const platforms: Array<"tiktok" | "youtube" | "twitch"> = ["tiktok", "youtube", "twitch"];
     const names = ["Alice", "Bob", "Charlie", "Diana", "Eve"];
     const msgs = ["สวัสดีครับ! 🎉", "Hello from chat!", "ดีจ้า 😊", "GG!", "ส่งกำลังใจ 💪", "สนุกมาก!", "Love this stream! ❤️"];
     try {
@@ -221,7 +253,18 @@ export default function ChatPage() {
 
   return (
     <DashboardShell title="Chat Overlay">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      {isPageLoading ? (
+        <div className="flex min-h-[50vh] items-center justify-center rounded-xl border border-slate-800/50 bg-slate-900/20 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <svg className="h-8 w-8 animate-spin text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-sm font-medium text-slate-400">กำลังโหลดข้อมูล...</p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         {/* Left: Create + Sources List */}
         <div className="space-y-4">
           <ResourceCard>
@@ -230,15 +273,16 @@ export default function ChatPage() {
 
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-platform">Platform</label>
+                  <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-platform">แพลตฟอร์ม (Platform)</label>
                   <select
                     id="chat-platform"
                     className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white"
                     value={platform}
-                    onChange={(e) => setPlatform(e.target.value as "TIKTOK" | "YOUTUBE")}
+                    onChange={(e) => setPlatform(e.target.value as "TIKTOK" | "YOUTUBE" | "TWITCH")}
                   >
                     <option value="TIKTOK">TikTok</option>
                     <option value="YOUTUBE">YouTube</option>
+                    <option value="TWITCH">Twitch</option>
                   </select>
                 </div>
                 <div>
@@ -249,19 +293,25 @@ export default function ChatPage() {
                     value={overlayId}
                     onChange={(e) => setOverlayId(e.target.value)}
                   >
-                    {overlays.length ? overlays.map((o) => <option key={o.id} value={o.id}>{o.name}</option>) : <option value="">No overlay</option>}
+                    {overlays.length ? overlays.map((o) => <option key={o.id} value={o.id}>{o.name}</option>) : <option value="">ไม่มี Overlay</option>}
                   </select>
                 </div>
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-target">
-                  {platform === "TIKTOK" ? "TikTok Username (เช่น @username)" : "YouTube Channel (ชื่อช่อง, @handle, URL หรือ Video ID)"}
+                  {platform === "TIKTOK" && "TikTok Username (เช่น @username)"}
+                  {platform === "YOUTUBE" && "YouTube Channel (ชื่อช่อง, @handle, URL หรือ Video ID)"}
+                  {platform === "TWITCH" && "Twitch Channel (ชื่อช่อง)"}
                 </label>
                 <input
                   id="chat-target"
                   className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white"
-                  placeholder={platform === "TIKTOK" ? "@tiktokuser" : "เช่น WorkpointOfficial หรือ @channelhandle"}
+                  placeholder={
+                    platform === "TIKTOK" ? "@tiktokuser" :
+                    platform === "TWITCH" ? "เช่น zbingz" :
+                    "เช่น WorkpointOfficial หรือ @channelhandle"
+                  }
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                 />
@@ -278,8 +328,16 @@ export default function ChatPage() {
                 />
               </div>
 
-              <button className="w-fit rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50" disabled={!target.trim() || !overlayId}>
-                เพิ่ม Chat Source
+              <button className="w-fit rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2" disabled={!target.trim() || !overlayId || isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    กำลังเพิ่ม...
+                  </>
+                ) : "เพิ่ม Chat Source"}
               </button>
 
               {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
@@ -307,16 +365,46 @@ export default function ChatPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {source.status === "CONNECTED" ? (
-                      <button className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800" onClick={() => void disconnectSource(source.id)}>
-                        Disconnect
+                      <button 
+                        className="flex items-center gap-1.5 rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed" 
+                        onClick={() => void disconnectSource(source.id)}
+                        disabled={!!actionLoading[source.id]}
+                      >
+                        {actionLoading[source.id] === "DISCONNECTING" && (
+                          <svg className="animate-spin h-3.5 w-3.5 text-slate-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        {actionLoading[source.id] === "DISCONNECTING" ? "กำลังตัดการ..." : "ตัดการเชื่อมต่อ"}
                       </button>
                     ) : (
-                      <button className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700" onClick={() => void connectSource(source.id)}>
-                        Connect
+                      <button 
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-white ${source.status === "CONNECTING" || actionLoading[source.id] === "CONNECTING" ? "bg-amber-600 opacity-50 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"} disabled:opacity-50 disabled:cursor-not-allowed`}
+                        onClick={() => void connectSource(source.id)}
+                        disabled={source.status === "CONNECTING" || !!actionLoading[source.id]}
+                      >
+                        {(source.status === "CONNECTING" || actionLoading[source.id] === "CONNECTING") && (
+                          <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        {source.status === "CONNECTING" || actionLoading[source.id] === "CONNECTING" ? "กำลังเชื่อมต่อ..." : "เชื่อมต่อ"}
                       </button>
                     )}
-                    <button className="rounded-md border border-rose-800 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-950" onClick={() => void deleteSource(source.id)}>
-                      ลบ
+                    <button 
+                      className="flex items-center gap-1.5 rounded-md border border-rose-800 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-950 disabled:opacity-50 disabled:cursor-not-allowed" 
+                      onClick={() => void deleteSource(source.id)}
+                      disabled={!!actionLoading[source.id]}
+                    >
+                      {actionLoading[source.id] === "DELETING" && (
+                        <svg className="animate-spin h-3.5 w-3.5 text-rose-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      )}
+                      {actionLoading[source.id] === "DELETING" ? "กำลังลบ..." : "ลบ"}
                     </button>
                   </div>
                 </div>
@@ -337,38 +425,16 @@ export default function ChatPage() {
                   + Mock Chat
                 </button>
               </div>
-              <div className="h-96 overflow-y-auto rounded-md border border-slate-800 bg-slate-950 p-3">
-                {chatMessages.length === 0 ? (
-                  <p className="text-sm text-slate-500">รอข้อความแชท...</p>
-                ) : (
-                  chatMessages.map((msg) => (
-                    <div key={msg.id} className="mb-2 flex items-start gap-2">
-                      {msg.avatarUrl ? (
-                        <img src={msg.avatarUrl} alt="" referrerPolicy="no-referrer" className="mt-0.5 h-6 w-6 rounded-full" />
-                      ) : (
-                        <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${msg.platform === "tiktok" ? "bg-rose-600" : "bg-red-600"}`}>
-                          {msg.platform === "tiktok" ? "T" : "Y"}
-                        </span>
-                      )}
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <PlatformIcon platform={msg.platform} />
-                          <span className={`truncate text-xs font-semibold ${msg.platform === "tiktok" ? "text-rose-400" : "text-red-400"}`}>
-                            {msg.displayName}
-                          </span>
-                        </div>
-                        <p className="break-words text-sm text-slate-200">{renderChatMessageText(msg.message)}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={chatEndRef} />
+              <div className="relative h-96 overflow-hidden rounded-md border border-slate-800 bg-slate-950">
+                <WidgetRenderer widget={mockWidget} chatMessages={chatMessages} />
               </div>
               <p className="text-xs text-slate-500">{chatMessages.length} ข้อความ</p>
             </div>
           </ResourceCard>
         </div>
-      </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
+

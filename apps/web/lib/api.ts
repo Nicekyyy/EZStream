@@ -10,11 +10,11 @@ const isTauri = typeof window !== "undefined" && (
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (
   typeof window !== "undefined"
-    ? (isTauri ? API_URL : window.location.origin)
+    ? (isTauri ? API_URL : window.location.origin.replace("localhost", "127.0.0.1"))
     : ""
 );
 
-export function getToken() {
+function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("ezstream_token");
 }
@@ -23,9 +23,7 @@ export function setToken(token: string) {
   window.localStorage.setItem("ezstream_token", token);
 }
 
-export function clearToken() {
-  window.localStorage.removeItem("ezstream_token");
-}
+
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();

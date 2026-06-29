@@ -16,12 +16,14 @@
     "db:seed": "dotenv -e .env -- pnpm --filter @ezstream/db db:seed",
     "desktop:prep": "node scripts/prepare-desktop.js",
     "desktop:dev": "pnpm desktop:prep && pnpm --filter @ezstream/desktop tauri dev",
+    "desktop:dev:all": "concurrently -n web,desktop -c cyan,blue \"pnpm --filter @ezstream/web dev\" \"pnpm desktop:dev\"",
     "desktop:build": "pnpm build && pnpm desktop:prep && pnpm --filter @ezstream/desktop tauri build"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
     "concurrently": "^9.1.2",
     "dotenv-cli": "^8.0.0",
+    "pake-cli": "^3.12.1",
     "prettier": "^3.5.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

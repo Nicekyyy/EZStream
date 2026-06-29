@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
 
-export function createOverlayToken() {
+function createOverlayToken() {
   return randomBytes(32).toString("base64url");
 }
 

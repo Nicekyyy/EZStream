@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { io } from "socket.io-client";
+import { Rnd } from "react-rnd";
 import { WidgetRenderer, type OverlayWidget } from "../../components/widget-renderer";
 import { API_URL } from "../../lib/api";
 import type { UnifiedChatMessage } from "@ezstream/shared";
@@ -59,10 +60,24 @@ function OverlayContent() {
   const [state, setState] = useState<OverlayState>();
   const [events, setEvents] = useState<string[]>([]);
   const [debug, setDebug] = useState(false);
+  const isEditor = searchParams.get("editor") === "true";
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, widgetId: string, zIndex: number } | null>(null);
   const ttsQueue = useRef<TtsPayload[]>([]);
   const isSpeaking = useRef(false);
   const currentAudio = useRef<HTMLAudioElement | null>(null);
   const [chatMessages, setChatMessages] = useState<UnifiedChatMessage[]>([]);
+
+  const handleContextMenu = (e: React.MouseEvent, widgetId: string, zIndex: number) => {
+    if (!isEditor) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, widgetId, zIndex });
+  };
+
+  const handleUpdateZIndex = (widgetId: string, currentZIndex: number, delta: number) => {
+    const nextZIndex = Math.max(0, currentZIndex + delta);
+    window.parent.postMessage({ type: "WIDGET_UPDATE", id: widgetId, updates: { zIndex: nextZIndex } }, "*");
+    setContextMenu(null);
+  };
 
   function speakNext() {
     if (isSpeaking.current || typeof window === "undefined") return;
@@ -118,21 +133,36 @@ function OverlayContent() {
   }
 
   useEffect(() => {
+    if (!overlayToken) return;
+
     const shouldDebug = window.location.pathname.includes("/preview") || new URLSearchParams(window.location.search).get("debug") === "1";
     setDebug(shouldDebug);
     const loadState = () =>
       fetch(`${API_URL}/public/overlay/${overlayToken}/state?_t=${Date.now()}`, { cache: "no-store" })
-        .then((res) => res.json())
-        .then((nextState: OverlayState) => {
+        .then((res) => {
+          if (res.status === 404) return null;
+          if (!res.ok) throw new Error(`Network response was not ok: ${res.status} ${res.statusText}`);
+          return res.json();
+        })
+        .then((nextState: OverlayState | null) => {
+          if (!nextState) {
+            setState(undefined);
+            return;
+          }
           setState(nextState);
           if (nextState.chatMessages?.length) {
             setChatMessages((prev) => mergeChatMessages(prev, nextState.chatMessages ?? []));
           }
-        });
+        })
+        .catch((err) => console.error("Overlay fetch error:", err));
+        
     void loadState();
     const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, { transports: ["websocket"] });
     
-    const joinRoom = () => socket.emit("overlay.join", { token: overlayToken });
+    const joinRoom = () => {
+      socket.emit("overlay.join", { token: overlayToken });
+      void loadState();
+    };
     if (socket.connected) joinRoom();
     socket.on("connect", joinRoom);
     
@@ -157,19 +187,88 @@ function OverlayContent() {
     };
   }, [overlayToken]);
 
+  const chroma = searchParams.get("chroma") === "true" || searchParams.get("bg") === "green";
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-transparent text-white">
-      {state?.widgets.map((widget) => (
-        <WidgetRenderer key={widget.id} widget={widget} chatMessages={chatMessages} />
-      ))}
+    <main 
+      className="relative min-h-screen overflow-hidden text-white"
+      style={{ backgroundColor: chroma ? "#00FF00" : "transparent" }}
+      onClick={() => setContextMenu(null)}
+    >
+      {state?.widgets.map((widget) => {
+        if (isEditor) {
+          return (
+            <Rnd
+              key={widget.id}
+              size={{ width: widget.width, height: widget.height }}
+              position={{ x: widget.positionX, y: widget.positionY }}
+              onDragStop={(e, d) => {
+                window.parent.postMessage({ type: "WIDGET_UPDATE", id: widget.id, updates: { positionX: Math.round(d.x), positionY: Math.round(d.y) } }, "*");
+              }}
+              onResizeStop={(e, dir, ref, delta, position) => {
+                window.parent.postMessage({
+                  type: "WIDGET_UPDATE",
+                  id: widget.id,
+                  updates: {
+                    width: Math.round(parseInt(ref.style.width, 10)),
+                    height: Math.round(parseInt(ref.style.height, 10)),
+                    positionX: Math.round(position.x),
+                    positionY: Math.round(position.y),
+                  }
+                }, "*");
+              }}
+              onContextMenu={(e: any) => handleContextMenu(e, widget.id, widget.zIndex)}
+              bounds="parent"
+              className={`group absolute hover:ring-2 hover:ring-indigo-500 hover:bg-indigo-500/10 transition-colors ${!widget.visibility && 'opacity-50'}`}
+              style={{ zIndex: widget.zIndex }}
+            >
+              <div className="w-full h-full pointer-events-none opacity-90">
+                <WidgetRenderer widget={{ ...widget, positionX: 0, positionY: 0 }} chatMessages={chatMessages} />
+              </div>
+            </Rnd>
+          );
+        }
+        return <WidgetRenderer key={widget.id} widget={widget} chatMessages={chatMessages} />;
+      })}
       {debug ? <aside className="absolute bottom-4 left-4 max-w-xl space-y-1 text-xs">{events.map((event, index) => <p key={index} className="rounded bg-black/60 px-2 py-1">{event}</p>)}</aside> : null}
+      
+      {contextMenu && (
+        <div
+          className="fixed z-[9999] bg-slate-900 border border-slate-700 rounded-md shadow-xl py-1 text-sm text-slate-200 min-w-40"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-4 py-2 hover:bg-slate-800"
+            onClick={(e) => { e.stopPropagation(); handleUpdateZIndex(contextMenu.widgetId, contextMenu.zIndex, 1); }}
+          >
+            นำมาไว้ข้างหน้าสุด (Bring Forward)
+          </button>
+          <button
+            className="w-full text-left px-4 py-2 hover:bg-slate-800"
+            onClick={(e) => { e.stopPropagation(); handleUpdateZIndex(contextMenu.widgetId, contextMenu.zIndex, -1); }}
+          >
+            ส่งไปไว้ข้างหลัง (Send Backward)
+          </button>
+          <div className="h-px bg-slate-800 my-1" />
+          <button
+            className="w-full text-left px-4 py-2 hover:bg-slate-800 text-indigo-400 font-medium"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.parent.postMessage({ type: "NAVIGATE", url: `/dashboard/widgets/edit?id=${contextMenu.widgetId}` }, "*");
+              setContextMenu(null);
+            }}
+          >
+            แก้ไข Widget...
+          </button>
+        </div>
+      )}
     </main>
   );
 }
 
 export default function OverlayPage() {
   return (
-    <Suspense fallback={<div className="p-4 text-xs text-white">Loading overlay...</div>}>
+    <Suspense fallback={<div className="p-4 text-xs text-white">กำลังโหลด Overlay...</div>}>
       <OverlayContent />
     </Suspense>
   );

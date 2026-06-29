@@ -67,12 +67,12 @@ export class PublicWidgetController {
     if (!message) return null;
     return {
       id: typeof value.id === "string" ? value.id : `event-${id}`,
-      platform: value.platform === "youtube" ? "youtube" : "tiktok",
+      platform: value.platform === "youtube" ? "youtube" : value.platform === "twitch" ? "twitch" : "tiktok",
       username: typeof value.username === "string" ? value.username : "unknown",
       displayName: typeof value.displayName === "string" ? value.displayName : typeof value.username === "string" ? value.username : "unknown",
       message,
       avatarUrl: typeof value.avatarUrl === "string" ? value.avatarUrl : undefined,
-      badges: Array.isArray(value.badges) ? value.badges.filter((badge): badge is string => typeof badge === "string") : [],
+      badges: Array.isArray(value.badges) ? value.badges.map((b: any) => ({ label: typeof b === "string" ? b : String(b?.label || ""), url: b?.url ? String(b.url) : undefined })) : [],
       timestamp: typeof value.timestamp === "number" && Number.isFinite(value.timestamp) ? value.timestamp : createdAt.getTime(),
       overlayId: typeof value.overlayId === "string" ? value.overlayId : undefined,
       overlayToken: typeof value.overlayToken === "string" ? value.overlayToken : undefined

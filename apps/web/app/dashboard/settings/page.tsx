@@ -35,9 +35,6 @@ export default function SettingsPage() {
   // Form state
   const [credentialsJson, setCredentialsJson] = useState("");
   const [credentialsMasked, setCredentialsMasked] = useState(false);
-  const [ttsVoice, setTtsVoice] = useState("th-TH-Neural2-C");
-  const [ttsCooldownSec, setTtsCooldownSec] = useState(0);
-  const [bannedWordsText, setBannedWordsText] = useState("");
 
   useEffect(() => {
     loadCreator();
@@ -53,9 +50,6 @@ export default function SettingsPage() {
         setCredentialsJson(""); // Don't show actual key
         setCredentialsMasked(true);
       }
-      if (settings.googleTtsVoice) setTtsVoice(settings.googleTtsVoice);
-      if (typeof settings.ttsCooldownMs === "number") setTtsCooldownSec(Math.round(settings.ttsCooldownMs / 1000));
-      if (Array.isArray(settings.bannedWords)) setBannedWordsText(settings.bannedWords.join("\n"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ");
     } finally {
@@ -86,16 +80,8 @@ export default function SettingsPage() {
         }
       }
 
-      const bannedWords = bannedWordsText
-        .split("\n")
-        .map((w) => w.trim())
-        .filter(Boolean);
-
       const settings: CreatorSettings = {
-        ...(creator ? safeSettings(creator.settings) : {}),
-        googleTtsVoice: ttsVoice,
-        ttsCooldownMs: Math.max(0, ttsCooldownSec * 1000),
-        bannedWords
+        ...(creator ? safeSettings(creator.settings) : {})
       };
 
       // Only update credentials if user provided new JSON
@@ -147,7 +133,7 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <DashboardShell title="Settings">
+      <DashboardShell title="ตั้งค่า">
         <div className="flex items-center gap-3 text-ink-subtle">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           กำลังโหลด...
@@ -157,7 +143,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <DashboardShell title="Settings">
+    <DashboardShell title="ตั้งค่า">
       <form onSubmit={handleSave} className="flex flex-col gap-6 max-w-3xl">
         {/* Notifications */}
         {message && (
@@ -238,93 +224,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-          </div>
-        </ResourceCard>
-
-        {/* ─── TTS Voice Settings ─── */}
-        <ResourceCard>
-          <div className="flex flex-col gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-white">TTS Voice Settings</h2>
-              <p className="text-sm text-ink-subtle mt-1">
-                ตั้งค่าเสียงพูด cooldown และคำต้องห้าม
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="tts-voice">
-                  Voice Name
-                </label>
-                <select
-                  id="tts-voice"
-                  className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white focus:border-primary focus:outline-none"
-                  value={ttsVoice}
-                  onChange={(e) => setTtsVoice(e.target.value)}
-                >
-                  <optgroup label="ไทย (Thai)">
-                    <option value="th-TH-Neural2-C">th-TH-Neural2-C (หญิง)</option>
-                    <option value="th-TH-Standard-A">th-TH-Standard-A (หญิง)</option>
-                  </optgroup>
-                  <optgroup label="อังกฤษ (English US)">
-                    <option value="en-US-Neural2-A">en-US-Neural2-A (ชาย)</option>
-                    <option value="en-US-Neural2-C">en-US-Neural2-C (หญิง)</option>
-                    <option value="en-US-Neural2-D">en-US-Neural2-D (ชาย)</option>
-                    <option value="en-US-Neural2-F">en-US-Neural2-F (หญิง)</option>
-                    <option value="en-US-Neural2-J">en-US-Neural2-J (ชาย)</option>
-                  </optgroup>
-                  <optgroup label="ญี่ปุ่น (Japanese)">
-                    <option value="ja-JP-Neural2-B">ja-JP-Neural2-B (หญิง)</option>
-                    <option value="ja-JP-Neural2-C">ja-JP-Neural2-C (ชาย)</option>
-                    <option value="ja-JP-Neural2-D">ja-JP-Neural2-D (ชาย)</option>
-                  </optgroup>
-                  <optgroup label="เกาหลี (Korean)">
-                    <option value="ko-KR-Neural2-A">ko-KR-Neural2-A (หญิง)</option>
-                    <option value="ko-KR-Neural2-B">ko-KR-Neural2-B (หญิง)</option>
-                    <option value="ko-KR-Neural2-C">ko-KR-Neural2-C (ชาย)</option>
-                  </optgroup>
-                  <optgroup label="จีน (Chinese Mandarin)">
-                    <option value="cmn-CN-Neural2-A">cmn-CN-Neural2-A (หญิง)</option>
-                    <option value="cmn-CN-Neural2-B">cmn-CN-Neural2-B (ชาย)</option>
-                    <option value="cmn-CN-Neural2-D">cmn-CN-Neural2-D (หญิง)</option>
-                  </optgroup>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="tts-cooldown">
-                  TTS Cooldown (วินาที)
-                </label>
-                <input
-                  id="tts-cooldown"
-                  type="number"
-                  min={0}
-                  max={300}
-                  step={1}
-                  className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white focus:border-primary focus:outline-none"
-                  value={ttsCooldownSec}
-                  onChange={(e) => setTtsCooldownSec(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                />
-                <p className="mt-1 text-xs text-ink-subtle">ระยะเวลาขั้นต่ำระหว่างการพูด TTS แต่ละครั้ง</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="banned-words">
-                คำต้องห้าม (Banned Words)
-              </label>
-              <textarea
-                id="banned-words"
-                className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-600 focus:border-primary focus:outline-none"
-                rows={4}
-                placeholder={"ใส่คำต้องห้าม 1 คำต่อบรรทัด\nเช่น:\nคำหยาบ1\nคำหยาบ2"}
-                value={bannedWordsText}
-                onChange={(e) => setBannedWordsText(e.target.value)}
-              />
-              <p className="mt-1 text-xs text-ink-subtle">
-                ข้อความที่ตรงกับคำเหล่านี้จะถูกแทนที่ด้วย *** ก่อนส่งเข้า TTS (1 คำต่อบรรทัด)
-              </p>
-            </div>
           </div>
         </ResourceCard>
 

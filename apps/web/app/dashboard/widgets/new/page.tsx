@@ -7,16 +7,11 @@ import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
 import { Field, Input, Notice, Select } from "../../../../components/ui-kit";
 import { api } from "../../../../lib/api";
+import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-warning";
 
 const widgetTypes = [
   "CHAT_WIDGET",
   "TTS_WIDGET",
-  "ALERT_WIDGET",
-  "GOAL_WIDGET",
-  "EVENT_LIST_WIDGET",
-  "IMAGE_WIDGET",
-  "SOUND_WIDGET",
-  "TEXT_WIDGET",
   "VIEWER_COUNT_WIDGET"
 ];
 
@@ -38,6 +33,9 @@ export default function NewWidgetPage() {
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลด Overlay ไม่สำเร็จ"));
   }, []);
+
+  const isDirty = name !== "New Widget" || type !== "CHAT_WIDGET" || overlayId !== "" || width !== 420 || height !== 160;
+  const { UnsavedChangesModal } = useUnsavedChangesWarning(isDirty);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -107,12 +105,24 @@ export default function NewWidgetPage() {
             </Field>
           </div>
 
-          <Button disabled={busy} type="submit" size="lg" className="w-full sm:w-auto bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold">
-            {busy ? "กำลังบันทึก..." : "สร้าง Widget"}
-          </Button>
+          <div className="flex flex-col md:flex-row md:items-center gap-2 pt-2">
+            <Button 
+              disabled={busy} 
+              type="submit" 
+              size="lg" 
+              className={`w-full sm:w-auto font-semibold transition-all active:translate-y-1 ${
+                isDirty 
+                  ? "bg-rose-600 text-white hover:bg-rose-500 border-rose-500 animate-pulse shadow-rose-900/20" 
+                  : "bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm"
+              }`}
+            >
+              {busy ? "กำลังบันทึก..." : "สร้าง Widget"}
+            </Button>
+          </div>
         </form>
       </ResourceCard>
       </div>
+      {UnsavedChangesModal}
     </DashboardShell>
   );
 }
