@@ -84,17 +84,17 @@ export function sanitizeTtsText(value: string) {
     .trim();
 }
 
-export const chatPlatforms = ["TIKTOK", "YOUTUBE"] as const;
+export const chatPlatforms = ["TIKTOK", "YOUTUBE", "TWITCH"] as const;
 export type ChatPlatformType = (typeof chatPlatforms)[number];
 
 export type UnifiedChatMessage = {
   id: string;
-  platform: "tiktok" | "youtube";
+  platform: "tiktok" | "youtube" | "twitch";
   username: string;
   displayName: string;
   message: string;
   avatarUrl?: string;
-  badges?: string[];
+  badges?: { label: string; url?: string }[];
   timestamp: number;
 };
 

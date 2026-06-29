@@ -8,17 +8,21 @@ import { ResourceCard } from "../../../components/resource-card";
 import { Badge, EmptyState, Field, Input, LoadingCards, Notice, PageActions } from "../../../components/ui-kit";
 import { APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
+import { ConfirmDeleteModal } from "../../../components/confirm-delete-modal";
+import { CheckIcon, CopyIcon, ExternalLinkIcon } from "../../../components/icons";
 
 type Overlay = { id: string; name: string; token: string; width: number; height: number; isActive: boolean };
 
 export default function OverlaysPage() {
   const [items, setItems] = useState<Overlay[]>([]);
-  const [name, setName] = useState("New Overlay");
+  const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [copiedId, setCopiedId] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [deletingOverlay, setDeletingOverlay] = useState<Overlay | null>(null);
 
   async function load() {
     setItems(await api<Overlay[]>("/overlays"));
@@ -38,6 +42,7 @@ export default function OverlaysPage() {
     try {
       await api("/overlays", { method: "POST", body: JSON.stringify({ name, width: 1920, height: 1080 }) });
       setMessage("สร้าง Overlay แล้ว");
+      setName("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "สร้าง Overlay ไม่สำเร็จ");
@@ -60,27 +65,34 @@ export default function OverlaysPage() {
     }
   }
 
-  async function deleteOverlay(overlay: Overlay) {
-    if (!window.confirm(`ลบ Overlay "${overlay.name}"? Widget และ Chat Source ใน Overlay นี้จะถูกลบไปด้วย`)) return;
-    setBusyId(overlay.id);
+  function deleteOverlay(overlay: Overlay) {
+    setDeletingOverlay(overlay);
+  }
+
+  async function confirmDelete() {
+    if (!deletingOverlay) return;
+    setBusyId(deletingOverlay.id);
     setMessage("");
     setError("");
     try {
-      await api(`/overlays/${overlay.id}`, { method: "DELETE" });
+      await api(`/overlays/${deletingOverlay.id}`, { method: "DELETE" });
       setMessage("ลบ Overlay แล้ว");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "ลบ Overlay ไม่สำเร็จ");
     } finally {
       setBusyId("");
+      setDeletingOverlay(null);
     }
   }
 
   async function copyUrl(overlay: Overlay) {
-    const copied = await copyText(`${APP_URL}/overlay/${overlay.token}`);
+    const copied = await copyText(`${APP_URL}/overlay?token=${overlay.token}`);
     if (copied) {
       setError("");
       setMessage("คัดลอก URL แล้ว");
+      setCopiedId(overlay.id);
+      setTimeout(() => setCopiedId(""), 2000);
     } else {
       setMessage("");
       setError("คัดลอก URL ไม่สำเร็จ");
@@ -96,7 +108,7 @@ export default function OverlaysPage() {
       <ResourceCard className="mb-5">
         <form onSubmit={create} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <Field label="ชื่อ Overlay">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Input placeholder="เช่น Main Stream, Just Chatting..." value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
           <Button disabled={creating || !name.trim()} type="submit">
             {creating ? "กำลังสร้าง..." : "สร้าง Overlay"}
@@ -114,32 +126,56 @@ export default function OverlaysPage() {
       ) : items.length ? (
         <div className="grid gap-3">
           {items.map((overlay) => (
-            <ResourceCard key={overlay.id}>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-white">{overlay.name}</p>
-                    <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {overlay.width} x {overlay.height}
-                  </p>
-                  <p className="mt-1 break-all text-sm text-slate-500">{APP_URL}/overlay/{overlay.token}</p>
+            <ResourceCard key={overlay.id} className="p-0 overflow-hidden">
+              <div className="p-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link className="text-lg font-bold text-white hover:text-primary transition-colors focus-visible:outline-none focus-visible:text-primary" href={`/dashboard/overlays/edit?id=${overlay.id}`}>
+                    {overlay.name}
+                  </Link>
+                  <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" disabled={busyId === overlay.id} onClick={() => void toggleActive(overlay)} type="button">
+                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-ink-subtle">
+                  <p><span className="text-ink-faint mr-1">SIZE</span> {overlay.width}x{overlay.height}</p>
+                  <p><span className="text-ink-faint mr-1">URL</span> {APP_URL}/overlay?token={overlay.token}</p>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-surface-dark border-t-2 border-border-base p-4 gap-4">
+                <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+                  <button 
+                    disabled={busyId === overlay.id} 
+                    onClick={() => void copyUrl(overlay)} 
+                    className={
+                      copiedId === overlay.id
+                        ? "flex items-center gap-1.5 text-sm font-bold text-emerald-400 hover:text-emerald-300 focus-visible:outline-none focus-visible:text-emerald-300 transition-colors disabled:opacity-50"
+                        : "flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50"
+                    }
+                  >
+                    {copiedId === overlay.id ? (
+                      <>
+                        <CheckIcon className="h-4 w-4" /> สำเร็จ!
+                      </>
+                    ) : (
+                      <>
+                        <CopyIcon className="h-4 w-4" /> คัดลอก URL
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    onClick={() => window.open(`${APP_URL}/overlay?token=${overlay.token}&bg=green`, `overlay_${overlay.id}`, "popup=1,width=1920,height=1080")} 
+                    className="flex items-center gap-1.5 text-sm font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:text-indigo-300 transition-colors"
+                  >
+                    <ExternalLinkIcon className="h-4 w-4" /> เปิดหน้าต่างแยก (จับจอ)
+                  </button>
+                  <button disabled={busyId === overlay.id} onClick={() => void toggleActive(overlay)} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
                     {overlay.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-                  </Button>
-                  <Button size="sm" variant="secondary" disabled={busyId === overlay.id} onClick={() => void copyUrl(overlay)} type="button">
-                    คัดลอก URL
-                  </Button>
-                  <Button size="sm" variant="ghost" asChild>
-                    <Link href={`/dashboard/overlays/${overlay.id}`}>จัดการ</Link>
-                  </Button>
-                  <Button size="sm" variant="destructive" disabled={busyId === overlay.id} onClick={() => void deleteOverlay(overlay)} type="button">
+                  </button>
+                  <button disabled={busyId === overlay.id} onClick={() => void deleteOverlay(overlay)} className="text-sm font-medium text-rose-500 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400 transition-colors disabled:opacity-50">
                     ลบ
-                  </Button>
+                  </button>
                 </div>
+                <Link href={`/dashboard/overlays/edit?id=${overlay.id}`} className="bg-primary text-surface-base px-6 py-2 text-sm font-semibold hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:border-white transition-all shadow-none hover:shadow-brutal-sm border-2 border-transparent text-center">
+                  จัดการ Overlay
+                </Link>
               </div>
             </ResourceCard>
           ))}
@@ -147,6 +183,15 @@ export default function OverlaysPage() {
       ) : (
         <EmptyState title="ยังไม่มี Overlay" description="สร้าง overlay แรกเพื่อเริ่มวาง widget และนำ URL ไปใช้ในโปรแกรมสตรีม" />
       )}
+      
+      <ConfirmDeleteModal 
+        isOpen={!!deletingOverlay}
+        onClose={() => setDeletingOverlay(null)}
+        onConfirm={() => void confirmDelete()}
+        title="ลบ Overlay"
+        itemName={deletingOverlay?.name ?? ""}
+        description="Widget และ Chat Source ใน Overlay นี้จะถูกลบไปด้วย"
+      />
     </DashboardShell>
   );
 }

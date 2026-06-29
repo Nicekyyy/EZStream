@@ -20,7 +20,7 @@ export class ChatSourcesService {
     });
   }
 
-  async create(creatorId: string, data: { overlayId: string; platform: "TIKTOK" | "YOUTUBE"; target: string; label?: string }) {
+  async create(creatorId: string, data: { overlayId: string; platform: "TIKTOK" | "YOUTUBE" | "TWITCH"; target: string; label?: string }) {
     const overlay = await this.prisma.overlay.findUnique({ where: { id: data.overlayId } });
     if (!overlay || overlay.creatorId !== creatorId) throw new ForbiddenException("Overlay not found");
     return this.prisma.chatSource.create({

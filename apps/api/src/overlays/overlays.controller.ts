@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
-import { IsBoolean, IsDefined, IsInt, IsObject, IsOptional, IsString, Min } from "class-validator";
+import { IsBoolean, IsDefined, IsInt, IsObject, IsOptional, IsString, Min, Max } from "class-validator";
 import { CurrentUser, type AuthUser } from "../common/current-user.decorator.js";
 import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { OverlaysService } from "./overlays.service.js";
@@ -12,11 +12,13 @@ class CreateOverlayDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(3840)
   width?: number;
 
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(2160)
   height?: number;
 
   @IsOptional()
@@ -32,11 +34,13 @@ class UpdateOverlayDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(3840)
   width?: number;
 
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(2160)
   height?: number;
 
   @IsOptional()

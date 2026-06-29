@@ -1,9 +1,20 @@
 "use client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
-export function getToken() {
+const isTauri = typeof window !== "undefined" && (
+  window.location.origin.startsWith("tauri://") ||
+  window.location.origin.startsWith("http://tauri.localhost") ||
+  window.location.hostname === "tauri.localhost"
+);
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (
+  typeof window !== "undefined"
+    ? (isTauri ? API_URL : window.location.origin.replace("localhost", "127.0.0.1"))
+    : ""
+);
+
+function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("ezstream_token");
 }
@@ -12,9 +23,7 @@ export function setToken(token: string) {
   window.localStorage.setItem("ezstream_token", token);
 }
 
-export function clearToken() {
-  window.localStorage.removeItem("ezstream_token");
-}
+
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
