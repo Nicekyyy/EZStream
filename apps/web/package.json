@@ -13,6 +13,9 @@
   "dependencies": {
     "@ezstream/shared": "workspace:*",
     "@ezstream/ui": "workspace:*",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "~2.10.1",
     "framer-motion": "^12.42.0",
     "next": "^15.3.2",
     "react": "^19.1.0",
