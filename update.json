@@ -1,19 +1,11 @@
 {
-  "version": "0.1.1",
-  "notes": "Initial release of EZStream Desktop",
+  "version": "0.1.2",
+  "notes": "เพิ่มฟีเจอร์ใหม่",
   "pub_date": "2026-06-29T16:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "REPLACE_WITH_SIGNATURE_FROM_GITHUB_RELEASE",
       "url": "https://github.com/YOUR_GITHUB_USERNAME/ezstream/releases/download/v0.1.1/EZStream_0.1.1_x64_en-US.msi.zip"
-    },
-    "darwin-x86_64": {
-      "signature": "REPLACE_WITH_SIGNATURE_FROM_GITHUB_RELEASE",
-      "url": "https://github.com/YOUR_GITHUB_USERNAME/ezstream/releases/download/v0.1.1/EZStream_0.1.1_x64.app.tar.gz"
-    },
-    "darwin-aarch64": {
-      "signature": "REPLACE_WITH_SIGNATURE_FROM_GITHUB_RELEASE",
-      "url": "https://github.com/YOUR_GITHUB_USERNAME/ezstream/releases/download/v0.1.1/EZStream_0.1.1_aarch64.app.tar.gz"
     }
   }
 }
