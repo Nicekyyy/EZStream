@@ -1,6 +1,6 @@
 {
   "name": "ezstream",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "engines": {
@@ -17,7 +17,8 @@
     "desktop:prep": "node scripts/prepare-desktop.js",
     "desktop:dev": "pnpm desktop:prep && pnpm --filter @ezstream/desktop tauri dev",
     "desktop:dev:all": "concurrently -n web,desktop -c cyan,blue \"pnpm --filter @ezstream/web dev\" \"pnpm desktop:dev\"",
-    "desktop:build": "pnpm build && pnpm desktop:prep && pnpm --filter @ezstream/desktop tauri build"
+    "desktop:build": "pnpm build && pnpm desktop:prep && pnpm --filter @ezstream/desktop tauri build",
+    "desktop:signer": "pnpm --filter @ezstream/desktop exec tauri signer generate"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",

@@ -328,8 +328,11 @@ function chatSettingsFromConfig(config: Record<string, unknown>): ChatSettingsDr
 }
 
 function viewerCountSettingsFromConfig(config: Record<string, unknown>) {
+  const platforms = configString(config, "platforms", "all");
   return {
-    platforms: configString(config, "platforms", "all"),
+    showYoutube: configBool(config, "showYoutube", platforms === "all" || platforms === "youtube"),
+    showTiktok: configBool(config, "showTiktok", platforms === "all" || platforms === "tiktok"),
+    showTwitch: configBool(config, "showTwitch", platforms === "all" || platforms === "twitch"),
     showBackground: configBool(config, "showBackground", true),
     fontSize: configNumber(config, "fontSize", 16),
     iconSize: configNumber(config, "iconSize", 20),
@@ -1409,12 +1412,11 @@ function ViewerCountWidgetSettings({
         <SettingsSection title="ทั่วไป">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="ช่องทางผู้ชมที่ต้องการแสดง">
-              <Select disabled={busy} value={draft.platforms} onChange={(event) => setValue("platforms", event.target.value)}>
-                <option value="all">แสดงทั้งหมด (รวมยอดทุกแพลตฟอร์ม)</option>
-                <option value="youtube">แสดงเฉพาะ YouTube</option>
-                <option value="tiktok">แสดงเฉพาะ TikTok</option>
-                <option value="twitch">แสดงเฉพาะ Twitch</option>
-              </Select>
+              <div className="flex flex-col gap-2 mt-1">
+                <ToggleField disabled={busy} label="YouTube" checked={draft.showYoutube} onChange={(value) => setValue("showYoutube", value)} />
+                <ToggleField disabled={busy} label="TikTok" checked={draft.showTiktok} onChange={(value) => setValue("showTiktok", value)} />
+                <ToggleField disabled={busy} label="Twitch" checked={draft.showTwitch} onChange={(value) => setValue("showTwitch", value)} />
+              </div>
             </Field>
             <ToggleField disabled={busy} label="แสดงจุดไฟกระพริบ (Ping Dot)" checked={draft.showPingDot} onChange={(value) => setValue("showPingDot", value)} />
             <ToggleField disabled={busy} label="แสดงเงาข้อความ (Text Shadow)" checked={draft.textShadow} onChange={(value) => setValue("textShadow", value)} />

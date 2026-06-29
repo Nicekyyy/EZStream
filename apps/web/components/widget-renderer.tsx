@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, memo, Fragment, type CSSProperties, type ReactNode } from "react";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 import { TiktokIcon, YoutubeIcon, TwitchIcon } from "./icons";
 import { motion, AnimatePresence } from "framer-motion";
@@ -713,6 +713,9 @@ function ViewerCountWidget({ widget }: { widget: OverlayWidget }) {
   const twitchCount = number(state.twitch, 0);
 
   const platforms = choice(config.platforms as string, ["all", "youtube", "tiktok", "twitch"], "all");
+  const showYoutube = bool(config.showYoutube, platforms === "all" || platforms === "youtube");
+  const showTiktok = bool(config.showTiktok, platforms === "all" || platforms === "tiktok");
+  const showTwitch = bool(config.showTwitch, platforms === "all" || platforms === "twitch");
   const showBackground = bool(config.showBackground, true);
   const fontSize = number(config.fontSize, 16);
   const iconSize = number(config.iconSize, 20);
@@ -735,15 +738,18 @@ function ViewerCountWidget({ widget }: { widget: OverlayWidget }) {
   let dotColorClass = "bg-green-500";
   let pingColorClass = "bg-green-400";
 
-  if (platforms === "youtube") {
-    dotColorClass = "bg-red-500";
-    pingColorClass = "bg-red-400";
-  } else if (platforms === "tiktok") {
-    dotColorClass = "bg-cyan-500";
-    pingColorClass = "bg-cyan-400";
-  } else if (platforms === "twitch") {
-    dotColorClass = "bg-purple-500";
-    pingColorClass = "bg-purple-400";
+  const activeCount = [showYoutube, showTiktok, showTwitch].filter(Boolean).length;
+  if (activeCount === 1) {
+    if (showYoutube) {
+      dotColorClass = "bg-red-500";
+      pingColorClass = "bg-red-400";
+    } else if (showTiktok) {
+      dotColorClass = "bg-cyan-500";
+      pingColorClass = "bg-cyan-400";
+    } else if (showTwitch) {
+      dotColorClass = "bg-purple-500";
+      pingColorClass = "bg-purple-400";
+    }
   }
 
   const containerStyle: React.CSSProperties = {
@@ -770,40 +776,39 @@ function ViewerCountWidget({ widget }: { widget: OverlayWidget }) {
       )}
 
       <div className="flex items-center" style={{ gap: `${gap}px` }}>
-        {(platforms === "all" || platforms === "youtube") && (
-          <div className="flex items-center gap-1.5">
-            <YoutubeIcon style={{ width: `${iconSize}px`, height: `${iconSize}px` }} className="text-red-500 drop-shadow-sm" />
-            <span style={{ ...baseTextStyle, color: useSeparateColors ? youtubeColor : textColor }}>
-              {youtubeCount.toLocaleString()}
-            </span>
-          </div>
-        )}
-
-        {platforms === "all" && (
-          <div className="w-px bg-white/20 self-center" style={{ height: `${iconSize * 0.8}px` }} />
-        )}
-
-        {(platforms === "all" || platforms === "tiktok") && (
-          <div className="flex items-center gap-1.5">
-            <TiktokIcon style={{ width: `${iconSize * 0.9}px`, height: `${iconSize * 0.9}px` }} className="text-cyan-400 drop-shadow-sm" />
-            <span style={{ ...baseTextStyle, color: useSeparateColors ? tiktokColor : textColor }}>
-              {tiktokCount.toLocaleString()}
-            </span>
-          </div>
-        )}
-
-        {platforms === "all" && (
-          <div className="w-px bg-white/20 self-center" style={{ height: `${iconSize * 0.8}px` }} />
-        )}
-
-        {(platforms === "all" || platforms === "twitch") && (
-          <div className="flex items-center gap-1.5">
-            <TwitchIcon style={{ width: `${iconSize * 0.9}px`, height: `${iconSize * 0.9}px` }} className="text-purple-400 drop-shadow-sm" />
-            <span style={{ ...baseTextStyle, color: useSeparateColors ? twitchColor : textColor }}>
-              {twitchCount.toLocaleString()}
-            </span>
-          </div>
-        )}
+        {[
+          showYoutube && (
+            <div key="youtube" className="flex items-center gap-1.5">
+              <YoutubeIcon style={{ width: `${iconSize}px`, height: `${iconSize}px` }} className="text-red-500 drop-shadow-sm" />
+              <span style={{ ...baseTextStyle, color: useSeparateColors ? youtubeColor : textColor }}>
+                {youtubeCount.toLocaleString()}
+              </span>
+            </div>
+          ),
+          showTiktok && (
+            <div key="tiktok" className="flex items-center gap-1.5">
+              <TiktokIcon style={{ width: `${iconSize * 0.9}px`, height: `${iconSize * 0.9}px` }} className="text-cyan-400 drop-shadow-sm" />
+              <span style={{ ...baseTextStyle, color: useSeparateColors ? tiktokColor : textColor }}>
+                {tiktokCount.toLocaleString()}
+              </span>
+            </div>
+          ),
+          showTwitch && (
+            <div key="twitch" className="flex items-center gap-1.5">
+              <TwitchIcon style={{ width: `${iconSize * 0.9}px`, height: `${iconSize * 0.9}px` }} className="text-purple-400 drop-shadow-sm" />
+              <span style={{ ...baseTextStyle, color: useSeparateColors ? twitchColor : textColor }}>
+                {twitchCount.toLocaleString()}
+              </span>
+            </div>
+          )
+        ].filter(Boolean).map((item, index, arr) => (
+          <Fragment key={(item as React.ReactElement).key}>
+            {item}
+            {index < arr.length - 1 && (
+              <div className="w-px bg-white/20 self-center" style={{ height: `${iconSize * 0.8}px` }} />
+            )}
+          </Fragment>
+        ))}
       </div>
     </div>
   );
