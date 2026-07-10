@@ -16,7 +16,7 @@ type DashboardData = {
   widgets: { id: string; name: string; type: string; overlayId: string }[];
 };
 
-const mockEvents = ["chat", "gift", "follow", "like", "share", "join"];
+const mockEvents = ["chat", "gift", "follow", "like", "share", "join", "subscribe"];
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData>();
@@ -37,7 +37,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.altKey && e.key >= "1" && e.key <= "6") {
+      if (e.altKey && e.key >= "1" && e.key <= "7") {
         const index = parseInt(e.key, 10) - 1;
         const eventType = mockEvents[index];
         if (eventType && busyType !== eventType) {
