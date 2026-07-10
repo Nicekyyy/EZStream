@@ -12,7 +12,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 
 - **Real-time Overlay:** อัปเดตข้อมูลบนหน้าจอแชท, Goal, Event List และ Alerts ได้ทันที
 - **Widget System:** รองรับ Widgets หลากหลายรูปแบบ (Chat, Alert, TTS, Goal, Event List, Image, Sound, Text)
-- **Chat-to-TTS Automation:** ข้อความแชทที่เข้ามาจะถูกอ่านออกเสียงอัตโนมัติผ่าน TTS Widget ตัวแรกที่เปิดใช้งานในแต่ละ Overlay (ยังไม่มี Rule Engine ที่ปรับแต่งเงื่อนไขเองได้ — อยู่ในแผนพัฒนาถัดไป)
+- **Rule Engine:** สร้าง Rule กำหนดเงื่อนไข (Condition แบบ AND/OR) และลำดับ Action การทำงานอัตโนมัติเมื่อมีเหตุการณ์เกิดขึ้น เช่น เมื่อมีคนพิมพ์ `!hello` ให้ Alert ทำงานและมีเสียง TTS จัดการ Rule ทั้งหมดได้ที่หน้า Dashboard `/dashboard/rules`
 - **TTS Integration:** ระบบอ่านข้อความ (Text-to-Speech) ผ่าน Browser API โดยตรงบน Overlay
 - **Media Manager:** ระบบอัปโหลดและจัดการไฟล์รูปภาพและเสียงสำหรับใช้ใน Widgets
 
@@ -23,8 +23,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 โปรเจกต์นี้เป็น **Monorepo** จัดการด้วย `pnpm` workspaces 
 
 - 🖥️ **`apps/web`**: หน้า Dashboard (Next.js), ระบบจัดการ Overlay และหน้า Overlay Preview สำหรับแสดงผลใน OBS
-- ⚙️ **`apps/api`**: Backend Service (NestJS) จัดการ REST API, JWT Authentication, Chat-to-TTS Automation, การอัปโหลด Media และ Socket.IO Gateway
-- 👷 **`apps/worker`**: Background Workers (NestJS + BullMQ) สำหรับจัดการ Queue งานหนัก เช่น `live-events`, `widget-actions`, และ `tts-jobs`
+- ⚙️ **`apps/api`**: Backend Service (NestJS) จัดการ REST API, JWT Authentication, Rule Engine (`apps/api/src/rules`), การอัปโหลด Media, Socket.IO Gateway และประมวลผล Queue งาน (เช่น `live-events`, `tts-jobs`) แบบ in-process ด้วย in-memory queue ภายในตัว API เอง (ไม่มี `apps/worker` หรือ BullMQ แยกต่างหาก)
 - 🗄️ **`packages/db`**: จัดการ Database Schema และ Client ด้วย Prisma
 - 📦 **`packages/shared`**: เก็บ Types และ Constants ที่ใช้ร่วมกันทั้ง Frontend และ Backend
 - 🎨 **`packages/ui`**: UI Components พื้นฐาน (Shadcn UI style)
@@ -36,7 +35,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 - **Frontend:** Next.js, React, Tailwind CSS, shadcn/ui
 - **Backend:** NestJS, TypeScript, class-validator
 - **Database:** PostgreSQL (Prisma ORM)
-- **Realtime & Queue:** Socket.IO, Redis, BullMQ
+- **Realtime & Queue:** Socket.IO, In-process In-memory Queue + Redis Mock (ไม่มี BullMQ หรือ Worker แยก)
 - **Infrastructure:** Docker Compose (สำหรับการพัฒนาในเครื่อง Local)
 
 ---
@@ -87,7 +86,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-คำสั่งนี้จะรันทั้ง Web (Port 3000), API (Port 4000) และ Worker พร้อมกัน!
+คำสั่งนี้จะรันทั้ง Web (Port 3000) และ API (Port 4000) พร้อมกัน! (การประมวลผล Queue รันแบบ in-process อยู่ภายใน API ไม่มี Worker แยกต่างหาก)
 
 ---
 
@@ -123,10 +122,10 @@ http://localhost:3000/overlay/{overlayToken}
 
 ### การทำงานของ System Flow (โดยย่อ)
 
-1. **Creator** สร้าง Overlay และวาง Widget ใน Dashboard
-2. เมื่อมี **Live Event** เข้ามา (เช่น แชท, ของขวัญ, follow) API จะรับ Event นั้นและบันทึกลง `EventLog`
-3. ปัจจุบันมีแค่ Chat-to-TTS Automation แบบอัตโนมัติ: ข้อความแชทจะสร้าง `TtsJob` ส่งเข้า Queue ให้ TTS Widget ตัวแรกที่เปิดใช้งาน (ยังไม่มี Rule Engine ที่กำหนดเงื่อนไขเองได้ — Event ประเภทอื่นเช่นของขวัญ/follow ยังไม่ trigger Widget ใด ๆ)
-4. **Worker** รับงานจาก Queue มาประมวลผล แล้ว Publish ผ่าน Redis
+1. **Creator** สร้าง Overlay, วาง Widget, และตั้ง Rule ใน Dashboard
+2. เมื่อมี **Live Event** เข้ามา (เช่น มีคนส่งของขวัญ) API จะรับ Event นั้น
+3. API ตรวจสอบเงื่อนไขกับ **Rule Engine** (`RuleEngineService`) หากตรงเงื่อนไข จะรัน Action ของ Rule นั้น สร้าง `WidgetAction` หรือ `TtsJob` ส่งเข้า Queue
+4. **API** ประมวลผลงานจาก Queue แบบ in-process (in-memory queue, ไม่มี Worker แยกหรือ BullMQ) แล้ว Publish ผ่าน Redis mock (in-memory pub/sub)
 5. **API (Socket Gateway)** ส่งข้อมูลให้ Client
 6. **Overlay (Web)** รับ Socket Event และแสดงผล Widget / เล่นเสียง TTS ทันที
 

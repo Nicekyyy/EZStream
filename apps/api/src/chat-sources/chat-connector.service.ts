@@ -149,7 +149,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
     let lastError: unknown = null;
     this.activeChats.set(chatSourceId, { connectionId: requestId, overlayToken, disconnect: () => undefined });
     try {
-      const { TikTokLiveConnection, WebcastEvent, ControlEvent } = await import("tiktok-live-connector");
+      const { TikTokLiveConnection, WebcastEvent, ControlEvent, MemberMessageAction } = await import("tiktok-live-connector");
       if (!this.isActiveChatConnection(chatSourceId, requestId)) return;
       const username = target.replace(/^@/, "");
 
@@ -163,7 +163,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
         const tiktok = new TikTokLiveConnection(username, {
           processInitialData: false,
           fetchRoomInfoOnConnect: false,
-          enableExtendedGiftInfo: false,
+          enableExtendedGiftInfo: true,
           connectWithUniqueId: attempt.connectWithUniqueId,
           signApiKey: signApiKey || undefined,
           wsClientHeaders: {
@@ -217,6 +217,57 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
             timestamp: Date.now()
           };
           void this.publishChatMessage(chatSourceId, overlayToken, message);
+        });
+
+        tiktok.on(WebcastEvent.GIFT, (data: any) => {
+          if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+          const isStreakable = data.giftDetails?.giftType === 1;
+          if (isStreakable && !data.repeatEnd) return;
+          void this.processTikTokEvent(chatSourceId, overlayToken, "live.gift.received", {
+            username: data.user?.uniqueId ?? "unknown",
+            displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
+            avatarUrl: this.resolveTikTokAvatarUrl(data.user),
+            giftName: data.giftDetails?.giftName,
+            giftId: data.giftId,
+            repeatCount: data.repeatCount ?? 1,
+            coins: (data.giftDetails?.diamondCount ?? 0) * (data.repeatCount ?? 1)
+          });
+        });
+
+        tiktok.on(WebcastEvent.FOLLOW, (data: any) => {
+          if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+          void this.processTikTokEvent(chatSourceId, overlayToken, "live.follow.received", {
+            username: data.user?.uniqueId ?? "unknown",
+            displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
+            avatarUrl: this.resolveTikTokAvatarUrl(data.user)
+          });
+        });
+
+        tiktok.on(WebcastEvent.SHARE, (data: any) => {
+          if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+          void this.processTikTokEvent(chatSourceId, overlayToken, "live.share.received", {
+            username: data.user?.uniqueId ?? "unknown",
+            displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown"
+          });
+        });
+
+        tiktok.on(WebcastEvent.LIKE, (data: any) => {
+          if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+          void this.processTikTokEvent(chatSourceId, overlayToken, "live.like.received", {
+            username: data.user?.uniqueId ?? "unknown",
+            displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
+            likeCount: data.likeCount ?? 1,
+            totalLikeCount: data.totalLikeCount ?? 0
+          });
+        });
+
+        tiktok.on(WebcastEvent.MEMBER, (data: any) => {
+          if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
+          if (data.action !== MemberMessageAction.SUBSCRIBED) return;
+          void this.processTikTokEvent(chatSourceId, overlayToken, "live.subscribe.received", {
+            username: data.user?.uniqueId ?? "unknown",
+            displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown"
+          });
         });
 
         (tiktok as any).on("roomUser", (data: any) => {
@@ -651,6 +702,17 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ─── Rules and Messages Execution ──────────────────────────────────────────
+
+  private async processTikTokEvent(chatSourceId: string, overlayToken: string, eventType: string, payload: Record<string, unknown>) {
+    const source = await this.prisma.chatSource.findUnique({ where: { id: chatSourceId } });
+    if (!source) return;
+    await this.liveEvents.processEvent(source.creatorId, eventType, {
+      ...payload,
+      platform: "tiktok",
+      overlayId: source.overlayId,
+      overlayToken
+    });
+  }
 
   private async publishChatMessage(chatSourceId: string, overlayToken: string, message: UnifiedChatMessage) {
     try {

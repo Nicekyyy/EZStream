@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, memo, Fragment, type CSSPropertie
 import type { UnifiedChatMessage } from "@ezstream/shared";
 import { TiktokIcon, YoutubeIcon, TwitchIcon } from "./icons";
 import { motion, AnimatePresence } from "framer-motion";
+import { API_URL } from "../lib/api";
 
 export type OverlayWidget = {
   id: string;
@@ -41,6 +42,10 @@ function clamp(value: number, min: number, max: number) {
 
 function color(value: unknown, fallback: string) {
   return typeof value === "string" && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value) ? value : fallback;
+}
+
+function resolveMediaSrc(src: string): string {
+  return src.startsWith("/") ? `${API_URL}${src}` : src;
 }
 
 function rgba(hex: string, alpha: number) {
@@ -178,7 +183,8 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
     display: widget.visibility ? "block" : "none"
   };
 
-  const audioSource = text(config.src) || text(config.url) || text(state.src);
+  const rawAudioSource = text(config.src) || text(config.url) || text(state.src);
+  const audioSource = rawAudioSource ? resolveMediaSrc(rawAudioSource) : "";
 
   useEffect(() => {
     if (widget.type === "SOUND_WIDGET" && state.playing && audioRef.current) {
@@ -234,7 +240,23 @@ function StatusWidget({ label, value }: { label: string; value: string }) {
 function AlertWidget({ widget }: { widget: OverlayWidget }) {
   const state = widget.state?.state ?? {};
   const config = widget.config ?? {};
-  const message = text(state.renderedText) || text((state.lastAction as Record<string, unknown> | undefined)?.renderedText) || text(config.template, widget.name);
+  const lastAction = (state.lastAction ?? {}) as Record<string, unknown>;
+  const message = text(state.renderedText) || text(lastAction.renderedText) || text(config.template, widget.name);
+  const durationMs = number(lastAction.durationMs, 0);
+  const triggeredAt = typeof state.lastTriggeredAt === "string" ? Date.parse(state.lastTriggeredAt) : 0;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!durationMs || !triggeredAt) return;
+    const remaining = triggeredAt + durationMs - Date.now();
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), remaining);
+    return () => clearTimeout(timer);
+  }, [durationMs, triggeredAt]);
+
+  const visible = !durationMs || !triggeredAt || now - triggeredAt < durationMs;
+  if (!visible) return <div className="h-full" />;
+
   return (
     <div className="flex h-full items-center gap-4 bg-black/70 p-5 border-l-4 border-primary">
       <div>
@@ -264,7 +286,14 @@ function EventListWidget({ widget }: { widget: OverlayWidget }) {
   return (
     <div className="h-full space-y-3 overflow-hidden bg-black/70 p-4">
       <p className="mb-2 text-xs font-semibold text-ink-subtle">Recent Events</p>
-      {items.map((item, index) => <p key={index} className="truncate rounded-none border-l-2 border-primary bg-surface-base/40 px-3 py-2 text-xs font-bold text-white">{JSON.stringify(item)}</p>)}
+      {items.map((item, index) => {
+        const renderedText = item && typeof item === "object" ? text((item as Record<string, unknown>).renderedText) : "";
+        return (
+          <p key={index} className="truncate rounded-none border-l-2 border-primary bg-surface-base/40 px-3 py-2 text-xs font-bold text-white">
+            {renderedText || JSON.stringify(item)}
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -695,8 +724,26 @@ function ChatWidget({ widget, chatMessages }: { widget: OverlayWidget; chatMessa
 }
 
 function ImageWidget({ widget }: { widget: OverlayWidget }) {
-  const src = text(widget.config.src) || text(widget.config.url) || text(widget.state?.state?.src);
-  return src ? <img src={src} alt={widget.name} className="h-full w-full object-contain" /> : <StatusWidget label="Image" value="ยังไม่มีรูป" />;
+  const state = widget.state?.state ?? {};
+  const rawSrc = text(widget.config.src) || text(widget.config.url) || text(state.src);
+  const src = rawSrc ? resolveMediaSrc(rawSrc) : "";
+  const lastAction = (state.lastAction ?? {}) as Record<string, unknown>;
+  const durationMs = number(lastAction.durationMs, 0);
+  const triggeredAt = typeof state.lastTriggeredAt === "string" ? Date.parse(state.lastTriggeredAt) : 0;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!durationMs || !triggeredAt) return;
+    const remaining = triggeredAt + durationMs - Date.now();
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), remaining);
+    return () => clearTimeout(timer);
+  }, [durationMs, triggeredAt]);
+
+  const visible = !durationMs || !triggeredAt || now - triggeredAt < durationMs;
+  if (!src || !visible) return src ? <div className="h-full" /> : <StatusWidget label="Image" value="ยังไม่มีรูป" />;
+
+  return <img src={src} alt={widget.name} className="h-full w-full object-contain" />;
 }
 
 function TextWidget({ widget }: { widget: OverlayWidget }) {

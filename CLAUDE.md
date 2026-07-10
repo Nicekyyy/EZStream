@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 EZStream is a live-stream overlay / widget / TTS-automation platform for creators (similar to TikFinity / Streamlabs). It ships both as a web app and as a bundled desktop app (Tauri). A creator builds overlays and widgets and renders the result in a browser source (OBS / TikTok LIVE Studio).
 
-> **No rule engine exists.** README.md, PRODUCT.md, and earlier versions of this file describe a "Rule Engine" that lets creators define custom automation conditions. That feature was never built: there is no `Rule` model in the Prisma schema (only a vestigial, always-empty `EventLog.matchedRuleIds` column) and no rule-management UI. The only automation that actually runs is hardcoded in `live-events.service.ts`: every `live.chat.message` event auto-creates a TTS job from the creator's first enabled `TTS_WIDGET`. Gift/follow/like/share events are logged but trigger no widget action.
+> **The rule engine.** Creators define `Rule` rows (Prisma model, `packages/db/prisma/schema.prisma`) — trigger event types, a nested AND/OR condition tree, and an ordered list of actions (alert, sound, image, text, goal, event-list, TTS, or a random-pick group). `RuleEngineService` (`apps/api/src/rules/rule-engine.service.ts`) evaluates rules on every event in `LiveEventsService.processEvent` and writes real values into `EventLog.matchedRuleIds`. Managed from the dashboard at `/dashboard/rules`. On first boot, any creator with zero rules and an enabled `TTS_WIDGET` gets a default "read chat aloud" rule auto-created, preserving the old hardcoded behavior as an editable starting point.
 
 > **The README is partly out of date.** It describes PostgreSQL + Redis + Docker + a separate `apps/worker`. The current code uses **SQLite** (Prisma), an **in-memory queue and Redis mock** (no external services), and there is **no worker app** — queue processing runs in-process inside the API. Trust the code over the README.
 
@@ -49,14 +49,14 @@ pnpm monorepo (`apps/*`, `packages/*`). Everything is **ESM** (`"type": "module"
 - **`apps/web`** — Next.js 15 (App Router, React 19, Tailwind v4). Configured for **static export** (`output: "export"`), so no server components / route handlers at runtime. Key routes: `/dashboard/*` (overlay + widget editors), `/overlay/*` (the OBS-facing renderer), `/auth/*`. Talks to the API via `NEXT_PUBLIC_API_URL` and Socket.IO via `NEXT_PUBLIC_SOCKET_URL`. Also imports `@tauri-apps/*` for desktop-only features (updater, process).
 - **`apps/desktop`** — Tauri (Rust) shell that wraps the web export and runs the bundled API sidecar. See Desktop section above.
 - **`packages/db`** — Prisma schema + client + seed. `provider = "sqlite"`, `DATABASE_URL="file:./dev.db"`. Migrations use `prisma db push` (no migration history). Exports the client and enums via `src/index.ts`.
-- **`packages/shared`** — cross-cutting types/constants (widget types, TTS voice helpers, `sanitizeTtsText`, etc.). Also exports a `conditionOperators` constant for the never-implemented rule engine — unused by any consumer today. Consumed by both api and web.
+- **`packages/shared`** — cross-cutting types/constants (widget types, TTS voice helpers, `sanitizeTtsText`, etc.). Also exports a `conditionOperators` constant used by the rule engine's condition builder (`apps/api/src/rules/rules-validation.ts`, `apps/web/app/dashboard/rules/edit/page.tsx`). Consumed by both api and web.
 - **`packages/ui`** — shadcn-style primitives (Radix + `class-variance-authority` + `tailwind-merge`).
 
 ### Event → overlay flow
 
 1. A **live event** arrives — either from a real chat connector or from `mock-events` (dashboard testing).
 2. `chat-sources` connects directly to platforms in-process: **TikTok** (`tiktok-live-connector`), **YouTube** (`youtubei.js`), **Twitch** (`tmi.js`). `TIKTOK_SIGN_API_KEY` (eulerstream) is optional to bypass rate limits.
-3. `LiveEventsService.processEvent` logs the event and, **only for `live.chat.message`**, hardcodes a `TtsJob` from the creator's first enabled `TTS_WIDGET` (see the no-rule-engine note above). Other event types are logged only.
+3. `LiveEventsService.processEvent` logs the event and calls `RuleEngineService.evaluate` (`apps/api/src/rules/`), which matches the event against the creator's enabled `Rule` rows and runs their actions — `SPEAK_TTS` creates a `TtsJob`, everything else creates a `WidgetAction`.
 4. The `TtsJob` goes onto the **queue** (`queues/queues.service.ts`). This is an **in-process `InMemoryQueue`**, not BullMQ. Processing publishes results via the **`MockRedis`** pub/sub (`redis/redis.module.ts`), an in-memory `EventEmitter` bus — no real Redis is required or connected.
 5. The **realtime** Socket.IO gateway subscribes to those channels and pushes events to connected overlay clients.
 6. The **overlay** web page renders the widget (alert, goal, event list, chat) and speaks TTS.
