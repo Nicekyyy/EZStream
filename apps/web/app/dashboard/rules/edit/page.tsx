@@ -235,6 +235,7 @@ function ActionEditor({
       <div className="flex items-center justify-between gap-2">
         <Select className="max-w-[220px]" value={action.type} onChange={(event) => onChange({ type: event.target.value })}>
           {ruleActionTypes
+            .filter((type) => type !== "TRIGGER_WIDGET")
             .filter((type) => !isRandomChild || type !== "RANDOM")
             .map((type) => (
               <option key={type} value={type}>{type}</option>
@@ -659,7 +660,7 @@ function RuleEditContent() {
           <div className="space-y-2">
             <Notice tone={testResult.matched ? "success" : "info"}>
               {testResult.matched
-                ? "Match — actions จะทำงาน"
+                ? "เงื่อนไขตรงกัน — หมายเหตุ: การทดสอบนี้ไม่ได้ตรวจสอบ cooldown หรือช่วงเวลาทำงาน (active time window) จึงอาจไม่ทำงานจริงหาก rule ติด cooldown หรืออยู่นอกช่วงเวลาที่กำหนด"
                 : testResult.eventTypeMatches
                   ? "เงื่อนไขไม่ผ่าน"
                   : "event type ไม่ตรงกับ trigger ของ rule นี้"}

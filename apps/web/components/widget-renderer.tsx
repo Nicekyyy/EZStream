@@ -285,7 +285,14 @@ function EventListWidget({ widget }: { widget: OverlayWidget }) {
   return (
     <div className="h-full space-y-3 overflow-hidden bg-black/70 p-4">
       <p className="mb-2 text-xs font-semibold text-ink-subtle">Recent Events</p>
-      {items.map((item, index) => <p key={index} className="truncate rounded-none border-l-2 border-primary bg-surface-base/40 px-3 py-2 text-xs font-bold text-white">{JSON.stringify(item)}</p>)}
+      {items.map((item, index) => {
+        const renderedText = item && typeof item === "object" ? text((item as Record<string, unknown>).renderedText) : "";
+        return (
+          <p key={index} className="truncate rounded-none border-l-2 border-primary bg-surface-base/40 px-3 py-2 text-xs font-bold text-white">
+            {renderedText || JSON.stringify(item)}
+          </p>
+        );
+      })}
     </div>
   );
 }
