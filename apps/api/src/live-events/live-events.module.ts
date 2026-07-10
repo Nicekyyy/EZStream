@@ -1,11 +1,11 @@
 import { Module } from "@nestjs/common";
 import { LiveEventsService } from "./live-events.service.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
-import { QueuesModule } from "../queues/queues.module.js";
 import { RedisModule } from "../redis/redis.module.js";
+import { RulesModule } from "../rules/rules.module.js";
 
 @Module({
-  imports: [PrismaModule, QueuesModule, RedisModule],
+  imports: [PrismaModule, RedisModule, RulesModule],
   providers: [LiveEventsService],
   exports: [LiveEventsService]
 })
