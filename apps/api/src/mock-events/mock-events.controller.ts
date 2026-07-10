@@ -55,6 +55,7 @@ export class MockEventsController {
   chat(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.chat.message", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       message: sanitizeMessage(dto.message ?? "!hello"),
       ...(dto.payload ?? {})
     });
