@@ -221,16 +221,16 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
 
         tiktok.on(WebcastEvent.GIFT, (data: any) => {
           if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) return;
-          const isStreakable = data.giftType === 1;
+          const isStreakable = data.giftDetails?.giftType === 1;
           if (isStreakable && !data.repeatEnd) return;
           void this.processTikTokEvent(chatSourceId, overlayToken, "live.gift.received", {
             username: data.user?.uniqueId ?? "unknown",
             displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",
             avatarUrl: this.resolveTikTokAvatarUrl(data.user),
-            giftName: data.giftName,
+            giftName: data.giftDetails?.giftName,
             giftId: data.giftId,
             repeatCount: data.repeatCount ?? 1,
-            coins: (data.diamondCount ?? 0) * (data.repeatCount ?? 1)
+            coins: (data.giftDetails?.diamondCount ?? 0) * (data.repeatCount ?? 1)
           });
         });
 
