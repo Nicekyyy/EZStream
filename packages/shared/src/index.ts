@@ -38,10 +38,22 @@ export const ruleActionTypes = [
   "UPDATE_GOAL",
   "APPEND_EVENT_LIST",
   "SHOW_IMAGE",
-  "UPDATE_TEXT"
+  "UPDATE_TEXT",
+  "RANDOM"
 ] as const;
 
 export type RuleActionType = (typeof ruleActionTypes)[number];
+
+export type RuleAction = {
+  type: RuleActionType;
+  widgetId?: string;
+  mediaAssetId?: string;
+  textTemplate?: string;
+  durationMs?: number;
+  amount?: number | string;
+  pick?: number;
+  actions?: RuleAction[];
+};
 
 export const googleTtsVoices = [
   { name: "th-TH-Neural2-C", label: "Thai female - Neural2 C", languageCode: "th-TH", gender: "FEMALE" },
@@ -82,6 +94,22 @@ export function sanitizeTtsText(value: string) {
     .replace(/[\u200D\uFE0F\uFE0E]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function getPathValue(payload: Record<string, unknown>, path: string): unknown {
+  return path.split(".").reduce<unknown>((value, key) => {
+    if (value && typeof value === "object" && key in value) {
+      return (value as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, payload);
+}
+
+export function renderTemplate(template: string, payload: Record<string, unknown>): string {
+  return template.replace(/\{([a-zA-Z0-9_.]+)\}/g, (_match, path: string) => {
+    const value = getPathValue(payload, path);
+    return value === undefined || value === null ? "" : String(value);
+  });
 }
 
 export const chatPlatforms = ["TIKTOK", "YOUTUBE", "TWITCH"] as const;
