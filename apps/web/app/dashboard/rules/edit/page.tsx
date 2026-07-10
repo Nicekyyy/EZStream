@@ -427,9 +427,12 @@ function RuleEditContent() {
         setCooldownScope(rule.cooldownScope === "user" ? "user" : "rule");
         setActiveFrom(rule.activeFrom ?? "");
         setActiveTo(rule.activeTo ?? "");
+        setLoading(false);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลด Rule ไม่สำเร็จ"))
-      .finally(() => setLoading(false));
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลด Rule ไม่สำเร็จ"));
+    // Note: loading intentionally stays true on failure so the blank-default form is never
+    // rendered/submittable for an existing rule that failed to load (would risk overwriting
+    // real data with defaults on save).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ruleId, isNew]);
 
@@ -478,6 +481,7 @@ function RuleEditContent() {
       const payload = buildPayload();
       if (isNew) {
         const created = await api<{ id: string }>("/rules", { method: "POST", body: JSON.stringify(payload) });
+        setInitialSnapshot(JSON.stringify(payload));
         router.push(`/dashboard/rules/edit?id=${created.id}`);
       } else {
         await api(`/rules/${ruleId}`, { method: "PATCH", body: JSON.stringify(payload) });
@@ -516,7 +520,7 @@ function RuleEditContent() {
   if (loading) {
     return (
       <DashboardShell title="แก้ไข Rule">
-        <p className="text-sm text-ink-subtle">กำลังโหลด...</p>
+        {error ? <Notice tone="error">{error}</Notice> : <p className="text-sm text-ink-subtle">กำลังโหลด...</p>}
       </DashboardShell>
     );
   }
