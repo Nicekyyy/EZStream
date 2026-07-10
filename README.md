@@ -12,7 +12,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 
 - **Real-time Overlay:** อัปเดตข้อมูลบนหน้าจอแชท, Goal, Event List และ Alerts ได้ทันที
 - **Widget System:** รองรับ Widgets หลากหลายรูปแบบ (Chat, Alert, TTS, Goal, Event List, Image, Sound, Text)
-- **Rule Engine:** กำหนดเงื่อนไขการทำงาน (Automation) เมื่อมีเหตุการณ์เกิดขึ้น เช่น เมื่อมีคนพิมพ์ `!hello` ให้ Alert ทำงานและมีเสียง TTS
+- **Rule Engine:** สร้าง Rule กำหนดเงื่อนไข (Condition แบบ AND/OR) และลำดับ Action การทำงานอัตโนมัติเมื่อมีเหตุการณ์เกิดขึ้น เช่น เมื่อมีคนพิมพ์ `!hello` ให้ Alert ทำงานและมีเสียง TTS จัดการ Rule ทั้งหมดได้ที่หน้า Dashboard `/dashboard/rules`
 - **TTS Integration:** ระบบอ่านข้อความ (Text-to-Speech) ผ่าน Browser API โดยตรงบน Overlay
 - **Media Manager:** ระบบอัปโหลดและจัดการไฟล์รูปภาพและเสียงสำหรับใช้ใน Widgets
 
@@ -23,7 +23,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 โปรเจกต์นี้เป็น **Monorepo** จัดการด้วย `pnpm` workspaces 
 
 - 🖥️ **`apps/web`**: หน้า Dashboard (Next.js), ระบบจัดการ Overlay และหน้า Overlay Preview สำหรับแสดงผลใน OBS
-- ⚙️ **`apps/api`**: Backend Service (NestJS) จัดการ REST API, JWT Authentication, Rule Engine, การอัปโหลด Media และ Socket.IO Gateway
+- ⚙️ **`apps/api`**: Backend Service (NestJS) จัดการ REST API, JWT Authentication, Rule Engine (`apps/api/src/rules`), การอัปโหลด Media และ Socket.IO Gateway
 - 👷 **`apps/worker`**: Background Workers (NestJS + BullMQ) สำหรับจัดการ Queue งานหนัก เช่น `live-events`, `widget-actions`, และ `tts-jobs`
 - 🗄️ **`packages/db`**: จัดการ Database Schema และ Client ด้วย Prisma
 - 📦 **`packages/shared`**: เก็บ Types และ Constants ที่ใช้ร่วมกันทั้ง Frontend และ Backend
@@ -125,7 +125,7 @@ http://localhost:3000/overlay/{overlayToken}
 
 1. **Creator** สร้าง Overlay, วาง Widget, และตั้ง Rule ใน Dashboard
 2. เมื่อมี **Live Event** เข้ามา (เช่น มีคนส่งของขวัญ) API จะรับ Event นั้น
-3. API ตรวจสอบเงื่อนไขกับ **Rule Engine** หากตรงเงื่อนไข จะสร้าง `WidgetAction` หรือ `TtsJob` ส่งเข้า **BullMQ**
+3. API ตรวจสอบเงื่อนไขกับ **Rule Engine** (`RuleEngineService`) หากตรงเงื่อนไข จะรัน Action ของ Rule นั้น สร้าง `WidgetAction` หรือ `TtsJob` ส่งเข้า Queue
 4. **Worker** รับงานจาก Queue มาประมวลผล แล้ว Publish ผ่าน Redis
 5. **API (Socket Gateway)** ส่งข้อมูลให้ Client
 6. **Overlay (Web)** รับ Socket Event และแสดงผล Widget / เล่นเสียง TTS ทันที
