@@ -1,4 +1,4 @@
-import { PrismaClient, WidgetType } from "@prisma/client";
+﻿import { PrismaClient, WidgetType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -64,6 +64,66 @@ async function main() {
     }
   });
 
+  const ttsWidget = await prisma.widget.upsert({
+    where: { id: "demo_tts_widget" },
+    update: { name: "TTS", type: WidgetType.TTS_WIDGET, overlayId: mainOverlayId, isEnabled: true },
+    create: {
+      id: "demo_tts_widget",
+      creatorId: demoCreatorId,
+      overlayId: mainOverlayId,
+      type: WidgetType.TTS_WIDGET,
+      name: "TTS",
+      isEnabled: true,
+      config: {}
+    }
+  });
+
+  const alertWidget = await prisma.widget.upsert({
+    where: { id: "demo_alert_widget" },
+    update: { name: "Gift Alert", type: WidgetType.ALERT_WIDGET, overlayId: mainOverlayId, isEnabled: true },
+    create: {
+      id: "demo_alert_widget",
+      creatorId: demoCreatorId,
+      overlayId: mainOverlayId,
+      type: WidgetType.ALERT_WIDGET,
+      name: "Gift Alert",
+      isEnabled: true,
+      config: {}
+    }
+  });
+
+  await prisma.rule.upsert({
+    where: { id: "demo_rule_chat_tts" },
+    update: {},
+    create: {
+      id: "demo_rule_chat_tts",
+      creatorId: demoCreatorId,
+      name: "อ่านแชทเป็นเสียง (TTS)",
+      isEnabled: true,
+      priority: 0,
+      eventTypes: ["live.chat.message"],
+      conditions: { all: [] },
+      actions: [{ type: "SPEAK_TTS", widgetId: ttsWidget.id }]
+    }
+  });
+
+  await prisma.rule.upsert({
+    where: { id: "demo_rule_gift_thanks" },
+    update: {},
+    create: {
+      id: "demo_rule_gift_thanks",
+      creatorId: demoCreatorId,
+      name: "ขอบคุณสำหรับของขวัญ",
+      isEnabled: true,
+      priority: 1,
+      eventTypes: ["live.gift.received"],
+      conditions: { all: [] },
+      actions: [{ type: "SHOW_ALERT", widgetId: alertWidget.id, textTemplate: "ขอบคุณ {displayName} สำหรับ {giftName}!", durationMs: 5000 }],
+      cooldownSeconds: 3,
+      cooldownScope: "rule"
+    }
+  });
+
   console.log("Seed completed for demo@example.com / password123");
 }
 
@@ -73,5 +133,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await prisma.\\\();
   });
