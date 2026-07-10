@@ -89,6 +89,7 @@ model Creator {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   overlays      Overlay[]
   widgets       Widget[]
+  rules         Rule[]
   eventLogs     EventLog[]
   widgetActions WidgetAction[]
   ttsJobs       TtsJob[]
@@ -337,4 +338,27 @@ model ChatSource {
   @@index([creatorId])
   @@index([overlayId])
   @@index([status])
+}
+
+model Rule {
+  id              String    @id @default(cuid())
+  creatorId       String
+  name            String
+  isEnabled       Boolean   @default(true)
+  priority        Int       @default(0)
+  stopOnMatch     Boolean   @default(false)
+  eventTypes      Json
+  conditions      Json      @default(dbgenerated("'{\"all\":[]}'"))
+  actions         Json      @default(dbgenerated("'[]'"))
+  cooldownSeconds Int       @default(0)
+  cooldownScope   String    @default("rule")
+  activeFrom      String?
+  activeTo        String?
+  lastFiredAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  creator Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId])
 }
