@@ -65,7 +65,8 @@ export class MockEventsController {
     return this.create(user.creatorId!, "live.gift.received", {
       username: dto.username ?? "demo_viewer",
       giftName: "Rose",
-      giftCount: 1,
+      repeatCount: 1,
+      coins: 1,
       ...(dto.payload ?? {})
     });
   }
@@ -90,6 +91,14 @@ export class MockEventsController {
   @Post("share")
   share(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.share.received", {
+      username: dto.username ?? "demo_viewer",
+      ...(dto.payload ?? {})
+    });
+  }
+
+  @Post("subscribe")
+  subscribe(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
+    return this.create(user.creatorId!, "live.subscribe.received", {
       username: dto.username ?? "demo_viewer",
       ...(dto.payload ?? {})
     });
