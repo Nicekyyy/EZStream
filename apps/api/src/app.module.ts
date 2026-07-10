@@ -20,6 +20,7 @@ import { LiveEventsModule } from "./live-events/live-events.module.js";
 import { TtsModule } from "./tts/tts.module.js";
 import { UsersModule } from "./users/users.module.js";
 import { WidgetsModule } from "./widgets/widgets.module.js";
+import { RulesModule } from "./rules/rules.module.js";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { WidgetsModule } from "./widgets/widgets.module.js";
     CreatorsModule,
     OverlaysModule,
     WidgetsModule,
+    RulesModule,
     EventsModule,
     RealtimeModule,
     LiveEventsModule,
