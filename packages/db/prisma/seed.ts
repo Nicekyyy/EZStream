@@ -1,4 +1,4 @@
-﻿import { PrismaClient, WidgetType } from "@prisma/client";
+import { PrismaClient, WidgetType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -133,5 +133,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.\\\();
+    await prisma.$disconnect();
   });
