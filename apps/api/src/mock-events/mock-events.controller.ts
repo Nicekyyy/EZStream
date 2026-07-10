@@ -64,6 +64,7 @@ export class MockEventsController {
   gift(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.gift.received", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       giftName: "Rose",
       repeatCount: 1,
       coins: 1,
@@ -75,6 +76,7 @@ export class MockEventsController {
   follow(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.follow.received", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       ...(dto.payload ?? {})
     });
   }
@@ -83,6 +85,7 @@ export class MockEventsController {
   like(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.like.received", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       likeCount: 1,
       ...(dto.payload ?? {})
     });
@@ -92,6 +95,7 @@ export class MockEventsController {
   share(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.share.received", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       ...(dto.payload ?? {})
     });
   }
@@ -100,6 +104,7 @@ export class MockEventsController {
   subscribe(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.subscribe.received", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       ...(dto.payload ?? {})
     });
   }
@@ -108,6 +113,7 @@ export class MockEventsController {
   join(@CurrentUser() user: AuthUser, @Body() dto: MockPayloadDto) {
     return this.create(user.creatorId!, "live.viewer.joined", {
       username: dto.username ?? "demo_viewer",
+      displayName: dto.username ?? "demo_viewer",
       ...(dto.payload ?? {})
     });
   }
