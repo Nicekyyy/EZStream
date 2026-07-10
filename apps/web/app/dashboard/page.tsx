@@ -16,7 +16,7 @@ type DashboardData = {
   widgets: { id: string; name: string; type: string; overlayId: string }[];
 };
 
-const mockEvents = ["chat", "gift", "follow", "like", "share", "join"];
+const mockEvents = ["chat", "gift", "follow", "like", "share", "join", "subscribe"];
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData>();
@@ -37,7 +37,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.altKey && e.key >= "1" && e.key <= "6") {
+      if (e.altKey && e.key >= "1" && e.key <= "7") {
         const index = parseInt(e.key, 10) - 1;
         const eventType = mockEvents[index];
         if (eventType && busyType !== eventType) {
@@ -92,7 +92,7 @@ export default function DashboardPage() {
         <LoadingCards count={2} />
       ) : (
         <div className="grid gap-8 lg:grid-cols-3">
-          
+
           {/* Left Column: The Testing Board */}
           <div className="flex flex-col gap-8 lg:col-span-2">
             <div className="border-2 border-border-base bg-surface-card p-6 sm:p-10">
@@ -100,10 +100,10 @@ export default function DashboardPage() {
                 <h2 className="text-xl font-semibold text-ink-base">ทดสอบการแจ้งเตือน</h2>
                 <p className="text-sm font-medium text-ink-subtle">ยิง event จำลองเพื่อทดสอบ Overlay แบบทันที</p>
               </div>
-              
+
               {data?.overlays.length === 0 ? (
-                <EmptyState 
-                  title="ยังไม่มี Overlay ที่ใช้งานได้" 
+                <EmptyState
+                  title="ยังไม่มี Overlay ที่ใช้งานได้"
                   description="สร้าง Overlay ก่อนทดสอบการแจ้งเตือน"
                   action={
                     <Button asChild>
@@ -114,8 +114,8 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {mockEvents.map((event, index) => (
-                    <button 
-                      key={event} 
+                    <button
+                      key={event}
                       disabled={busyType === event}
                       onClick={() => void sendMockEvent(event)}
                       className="group relative flex h-28 flex-col items-center justify-center overflow-hidden border-2 border-border-base bg-surface-dark text-center text-ink-base transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
@@ -128,7 +128,7 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
-          
+
           {/* Right Column: Overlays & Configs */}
           <div className="flex flex-col gap-4 lg:col-span-1">
             <h3 className="text-sm font-semibold text-ink-muted">Overlay ที่เปิดใช้งาน</h3>
@@ -140,7 +140,7 @@ export default function DashboardPage() {
                     <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "ON" : "OFF"}</Badge>
                   </div>
                   <div className="mt-6 flex gap-2">
-                    <Button 
+                    <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => void copyUrl(overlay.token)}

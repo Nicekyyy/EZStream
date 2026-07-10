@@ -3,7 +3,7 @@
 import { Button } from "@ezstream/ui";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useState, Suspense } from "react";
+import { FormEvent, useEffect, useState, Suspense, useRef } from "react";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { CheckIcon, CopyIcon } from "../../../../components/icons";
 import { ResourceCard } from "../../../../components/resource-card";
@@ -11,6 +11,15 @@ import { Badge, Field, Input, Notice } from "../../../../components/ui-kit";
 import { APP_URL, api } from "../../../../lib/api";
 import { copyText } from "../../../../lib/clipboard";
 import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-warning";
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 type Overlay = {
   id: string;
@@ -21,14 +30,68 @@ type Overlay = {
   isActive: boolean;
 };
 
+function ScalableIframePreview({ url, draftWidth, draftHeight, snapEnabled }: { url: string, draftWidth: number | "", draftHeight: number | "", snapEnabled: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [scale, setScale] = useState(1);
+  const targetWidth = Number(draftWidth) || 1920;
+  const targetHeight = Number(draftHeight) || 1080;
+
+  useEffect(() => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: "SET_SNAP_ENABLED", enabled: snapEnabled }, "*");
+    }
+  }, [snapEnabled]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const containerWidth = entry.contentRect.width;
+        if (containerWidth < targetWidth) {
+          setScale(containerWidth / targetWidth);
+        } else {
+          setScale(1);
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [targetWidth]);
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="relative w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-950 transition-[height] duration-300 ease-out"
+      style={{
+        height: targetHeight * scale,
+        backgroundImage:
+          `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`,
+      }}
+    >
+      <div className="absolute top-0 transition-transform duration-300 ease-out" style={{ left: "50%", width: targetWidth, height: targetHeight, transform: `translateX(-50%) scale(${scale})`, transformOrigin: "top center", flexShrink: 0 }}>
+        <iframe 
+          ref={iframeRef}
+          src={`${url}&editor=true`} 
+          style={{ width: targetWidth, height: targetHeight, border: "none", display: "block" }} 
+          title="Overlay Preview" 
+        />
+      </div>
+    </div>
+  );
+}
+
 function OverlayDetailContent() {
   const searchParams = useSearchParams();
   const overlayId = searchParams.get("id") ?? "";
   const router = useRouter();
   const [overlay, setOverlay] = useState<Overlay>();
   const [draftName, setDraftName] = useState("");
+  const [snapEnabled, setSnapEnabled] = useState(true);
   const [draftWidth, setDraftWidth] = useState<number | "">(1920);
   const [draftHeight, setDraftHeight] = useState<number | "">(1080);
+  const debouncedWidth = useDebounce(draftWidth, 500);
+  const debouncedHeight = useDebounce(draftHeight, 500);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -269,20 +332,14 @@ function OverlayDetailContent() {
       {overlay && url ? (
         <div className="mt-4">
           <ResourceCard>
-            <p className="mb-3 font-medium text-white">ดูตัวอย่าง & แก้ไข</p>
-            <div
-              className="relative overflow-auto rounded-lg border border-slate-800 bg-slate-950"
-              style={{
-                backgroundImage:
-                  `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`,
-              }}
-            >
-              <iframe 
-                src={`${url}&editor=true`} 
-                style={{ width: draftWidth || 1920, height: draftHeight || 1080, border: "none", display: "block", transformOrigin: "top left" }} 
-                title="Overlay Preview" 
-              />
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-medium text-white">ดูตัวอย่าง & แก้ไข</p>
+              <div className="flex items-center space-x-2 text-sm bg-slate-900/50 p-2 rounded-md border border-slate-700">
+                <input type="checkbox" id="snap-toggle" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} className="cursor-pointer" />
+                <label htmlFor="snap-toggle" className="cursor-pointer select-none text-slate-300">Snap to Guides</label>
+              </div>
             </div>
+            <ScalableIframePreview url={url} draftWidth={debouncedWidth} draftHeight={debouncedHeight} snapEnabled={snapEnabled} />
           </ResourceCard>
         </div>
       ) : null}

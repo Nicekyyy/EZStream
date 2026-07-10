@@ -124,9 +124,25 @@ export class QueuesService implements OnModuleInit, OnModuleDestroy {
       const items = Array.isArray(nextState.items) ? nextState.items : [];
       nextState = { ...nextState, items: [payload, ...items].slice(0, 20) };
     } else if (action.actionType === "PLAY_SOUND") {
-      nextState = { ...nextState, playing: true, lastAction: payload, lastTriggeredAt: new Date().toISOString() };
+      const mediaUrl = typeof payload.mediaUrl === "string" && payload.mediaUrl ? payload.mediaUrl : undefined;
+      nextState = {
+        ...nextState,
+        playing: true,
+        src: mediaUrl ?? nextState.src,
+        lastAction: payload,
+        lastTriggeredAt: new Date().toISOString()
+      };
     } else if (action.actionType === "UPDATE_TEXT") {
       nextState = { ...nextState, text: payload.renderedText ?? payload.text ?? "" };
+    } else if (action.actionType === "SHOW_IMAGE") {
+      const mediaUrl = typeof payload.mediaUrl === "string" && payload.mediaUrl ? payload.mediaUrl : undefined;
+      nextState = {
+        ...nextState,
+        visible: true,
+        src: mediaUrl ?? nextState.src,
+        lastAction: payload,
+        lastTriggeredAt: new Date().toISOString()
+      };
     } else {
       nextState = { ...nextState, visible: true, lastAction: payload, lastTriggeredAt: new Date().toISOString() };
     }

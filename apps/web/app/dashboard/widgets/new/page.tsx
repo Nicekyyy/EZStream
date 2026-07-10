@@ -12,7 +12,13 @@ import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-wa
 const widgetTypes = [
   "CHAT_WIDGET",
   "TTS_WIDGET",
-  "VIEWER_COUNT_WIDGET"
+  "VIEWER_COUNT_WIDGET",
+  "ALERT_WIDGET",
+  "GOAL_WIDGET",
+  "EVENT_LIST_WIDGET",
+  "IMAGE_WIDGET",
+  "SOUND_WIDGET",
+  "TEXT_WIDGET"
 ];
 
 export default function NewWidgetPage() {

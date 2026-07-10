@@ -16,7 +16,7 @@ import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-wa
 import { ConfirmDeleteModal } from "../../../../components/confirm-delete-modal";
 import { CheckIcon, CopyIcon } from "../../../../components/icons";
 
-type Overlay = { id: string; name: string; token: string };
+type Overlay = { id: string; name: string; token: string; width: number; height: number };
 type EventLog = { id: string; eventType: string; payload: unknown; createdAt: string };
 type PreviewChatMessage = UnifiedChatMessage & { overlayId?: string; overlayToken?: string };
 type Widget = {
@@ -208,6 +208,45 @@ function mergeChatMessages(current: PreviewChatMessage[], incoming: PreviewChatM
   const byId = new Map<string, PreviewChatMessage>();
   for (const item of [...current, ...incoming]) byId.set(item.id, item);
   return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-50);
+}
+
+function ScalableWidgetPreview({ children, width, height }: { children: React.ReactNode, width: number, height: number }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const targetWidth = Math.max(1, width || 400);
+  const targetHeight = Math.max(1, height || 160);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const containerWidth = entry.contentRect.width;
+        if (containerWidth < targetWidth) {
+          setScale(containerWidth / targetWidth);
+        } else {
+          setScale(1);
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [targetWidth]);
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="relative w-full overflow-hidden rounded-none border-2 border-border-base bg-surface-dark transition-all duration-300"
+      style={{
+        height: targetHeight * scale,
+        backgroundImage:
+          `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`,
+      }}
+    >
+      <div className="absolute top-0" style={{ left: "50%", width: targetWidth, height: targetHeight, transform: `translateX(-50%) scale(${scale})`, transformOrigin: "top center", flexShrink: 0 }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function chatSettingsFromConfig(config: Record<string, unknown>): ChatSettingsDraft {
@@ -684,8 +723,8 @@ function WidgetDetailContent() {
               <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-5">
                 <NumberField disabled={busy || !widget} label="X" onChange={setPositionX} value={positionX} />
                 <NumberField disabled={busy || !widget} label="Y" onChange={setPositionY} value={positionY} />
-                <NumberField disabled={busy || !widget} label="กว้าง" min={1} max={500} onChange={setWidth} value={width} />
-                <NumberField disabled={busy || !widget} label="สูง" min={1} max={1200} onChange={setHeight} value={height} />
+                <NumberField disabled={busy || !widget} label="ความกว้าง (Width)" min={1} max={widget?.overlay?.width ?? 1920} onChange={setWidth} value={width} />
+                <NumberField disabled={busy || !widget} label="ความสูง (Height)" min={1} max={widget?.overlay?.height ?? 1080} onChange={setHeight} value={height} />
                 <NumberField disabled={busy || !widget} label="Layer" onChange={setZIndex} value={zIndex} />
               </div>
 
@@ -759,19 +798,9 @@ function WidgetDetailContent() {
               </div>
               <Badge tone="info">{Math.max(1, Number(width) || 0)} x {Math.max(1, Number(height) || 0)}</Badge>
             </div>
-            <div className="flex w-full justify-center overflow-x-auto scrollbar-hide">
-              <div
-                className="relative overflow-hidden rounded-none border-2 border-border-base bg-surface-dark transition-all duration-300"
-                style={{
-                  backgroundImage:
-                    `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><rect width='10' height='10' fill='%231e293b'/><rect x='10' y='10' width='10' height='10' fill='%231e293b'/><rect x='10' width='10' height='10' fill='%230f172a'/><rect y='10' width='10' height='10' fill='%230f172a'/></svg>")`
-                }}
-              >
-                <div className="relative" style={{ width: Math.max(1, Number(width) || 400), height: Math.max(1, Number(height) || 160) }}>
-                  {deferredPreviewWidget ? <WidgetRenderer widget={deferredPreviewWidget} chatMessages={isChatWidget ? deferredChatMessages : []} /> : null}
-                </div>
-              </div>
-            </div>
+            <ScalableWidgetPreview width={Number(width) || 400} height={Number(height) || 160}>
+              {deferredPreviewWidget ? <WidgetRenderer widget={deferredPreviewWidget} chatMessages={isChatWidget ? deferredChatMessages : []} /> : null}
+            </ScalableWidgetPreview>
           </ResourceCard>
         </aside>
       </div>

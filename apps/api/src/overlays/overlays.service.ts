@@ -1,14 +1,18 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
-
+import { REDIS } from "../redis/redis.module.js";
+import type { Redis } from "ioredis";
 function createOverlayToken() {
   return randomBytes(32).toString("base64url");
 }
 
 @Injectable()
 export class OverlaysService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(REDIS) private readonly redis: Redis
+  ) {}
 
   list(creatorId: string) {
     return this.prisma.overlay.findMany({ where: { creatorId }, orderBy: { createdAt: "desc" } });
@@ -38,8 +42,39 @@ export class OverlaysService {
   }
 
   async update(id: string, creatorId: string, data: { name?: string; width?: number; height?: number; isActive?: boolean; config?: object }) {
-    await this.getOwned(id, creatorId);
-    return this.prisma.overlay.update({ where: { id }, data });
+    const overlay = await this.getOwned(id, creatorId);
+    const updated = await this.prisma.overlay.update({ where: { id }, data });
+
+    if (data.width !== undefined || data.height !== undefined) {
+      const widgets = await this.prisma.widget.findMany({ where: { overlayId: id } });
+      for (const widget of widgets) {
+        let updateNeeded = false;
+        const updates: any = {};
+        
+        if (data.width !== undefined && widget.width > data.width) {
+          updates.width = data.width;
+          updateNeeded = true;
+        }
+        if (data.height !== undefined && widget.height > data.height) {
+          updates.height = data.height;
+          updateNeeded = true;
+        }
+        
+        if (updateNeeded) {
+          await this.prisma.widget.update({ where: { id: widget.id }, data: updates });
+          await this.redis.publish(
+            "ezstream:realtime",
+            JSON.stringify({ room: `widget:${widget.id}`, event: "widget.updated", payload: { widgetId: widget.id } })
+          );
+          await this.redis.publish(
+            "ezstream:realtime",
+            JSON.stringify({ room: `overlay-token:${overlay.token}`, event: "widget.updated", payload: { widgetId: widget.id } })
+          );
+        }
+      }
+    }
+
+    return updated;
   }
 
   async remove(id: string, creatorId: string) {

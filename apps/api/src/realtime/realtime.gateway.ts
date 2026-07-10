@@ -3,11 +3,12 @@ import { ConnectedSocket, MessageBody, OnGatewayDisconnect, OnGatewayInit, Subsc
 import { Server, Socket } from "socket.io";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { REDIS } from "../redis/redis.module.js";
+import { isOriginAllowed } from "../common/cors.js";
 
 @WebSocketGateway({
   cors: {
-    origin: (origin: any, callback: any) => {
-      callback(null, true);
+    origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+      callback(null, isOriginAllowed(origin));
     },
     credentials: true
   }

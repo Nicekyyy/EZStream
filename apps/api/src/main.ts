@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { AppModule } from "./app.module.js";
 import { HttpErrorFilter } from "./common/http-error.filter.js";
+import { isOriginAllowed } from "./common/cors.js";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -14,8 +15,8 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || config.get<number>("API_PORT", 4000);
 
   app.enableCors({
-    origin: (origin: any, callback: any) => {
-      callback(null, true);
+    origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+      callback(null, isOriginAllowed(origin));
     },
     credentials: true
   });

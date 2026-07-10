@@ -44,7 +44,7 @@ export class WidgetsService {
   list(creatorId: string) {
     return this.prisma.widget.findMany({
       where: { creatorId },
-      include: { state: true, overlay: { select: { id: true, name: true } } },
+      include: { state: true, overlay: { select: { id: true, name: true, width: true, height: true } } },
       orderBy: { createdAt: "desc" }
     });
   }
@@ -74,7 +74,7 @@ export class WidgetsService {
         config: data.config ?? {},
         state: { create: { state: {} } }
       },
-      include: { state: true, overlay: { select: { id: true, name: true } } }
+      include: { state: true, overlay: { select: { id: true, name: true, width: true, height: true } } }
     });
     await this.publishWidgetUpdate(created.overlayId, created.id);
     return created;
@@ -83,7 +83,7 @@ export class WidgetsService {
   async getOwned(id: string, creatorId: string) {
     const widget = await this.prisma.widget.findUnique({
       where: { id },
-      include: { state: true, overlay: { select: { id: true, name: true } } }
+      include: { state: true, overlay: { select: { id: true, name: true, width: true, height: true } } }
     });
     if (!widget) throw new NotFoundException("Widget not found");
     if (widget.creatorId !== creatorId) throw new ForbiddenException("Widget does not belong to creator");
@@ -99,7 +99,7 @@ export class WidgetsService {
     const updated = await this.prisma.widget.update({
       where: { id },
       data,
-      include: { state: true, overlay: { select: { id: true, name: true } } }
+      include: { state: true, overlay: { select: { id: true, name: true, width: true, height: true } } }
     });
     if (current.overlayId && current.overlayId !== updated.overlayId) {
       await this.publishWidgetUpdate(current.overlayId, updated.id);

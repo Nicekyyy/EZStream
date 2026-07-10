@@ -8,6 +8,7 @@ const navItems = [
   ["/dashboard", "ภาพรวม"],
   ["/dashboard/overlays", "Overlays"],
   ["/dashboard/widgets", "Widgets"],
+  ["/dashboard/rules", "Rules"],
   ["/dashboard/tts", "TTS"],
   ["/dashboard/chat", "Chat"],
   ["/dashboard/settings", "ตั้งค่า"]

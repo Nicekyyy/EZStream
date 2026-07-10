@@ -8,7 +8,9 @@ product
 Streamers and creators who need to configure and manage their live stream overlays, widgets, and automation rules during broadcasts.
 
 ## Product Purpose
-To provide an easy, reliable system for creators to build realtime stream overlays (Alerts, TTS, Goals, Event Lists) and connect them to stream events via an intuitive rule engine. Success means the creator can set up their overlay once and rely on it to run smoothly during their live stream.
+To provide an easy, reliable system for creators to build realtime stream overlays (Alerts, TTS, Goals, Event Lists) and connect them to stream events. Success means the creator can set up their overlay once and rely on it to run smoothly during their live stream.
+
+> **Current state:** the "intuitive rule engine" described in earlier drafts of this doc has not been built yet (no rule model, no rule UI). Today the only automation is a hardcoded chat-message → TTS pipeline. A configurable rule engine remains a roadmap item, not a shipped capability.
 
 ## Brand Personality
 Playful, energetic, and community-focused. The aesthetic should feel approachable and native to the streaming ecosystem, drawing inspiration from platforms like Twitch and Discord.

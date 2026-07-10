@@ -4,7 +4,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { MediaAssetType } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { CurrentUser, type AuthUser } from "../common/current-user.decorator.js";
 import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -42,8 +42,7 @@ export class MediaController {
     const mime = allowedMimeTypes.get(file.mimetype);
     if (!mime) throw new BadRequestException("Unsupported file type");
 
-    const safeOriginalExt = extname(file.originalname).toLowerCase();
-    const fileName = `${randomUUID()}${safeOriginalExt || mime.ext}`;
+    const fileName = `${randomUUID()}${mime.ext}`;
     const storageRoot = resolve(this.config.get<string>("LOCAL_STORAGE_ROOT", "./storage"));
     const creatorDir = resolve(storageRoot, user.creatorId!);
     const storagePath = resolve(creatorDir, fileName);

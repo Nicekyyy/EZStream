@@ -12,7 +12,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 
 - **Real-time Overlay:** อัปเดตข้อมูลบนหน้าจอแชท, Goal, Event List และ Alerts ได้ทันที
 - **Widget System:** รองรับ Widgets หลากหลายรูปแบบ (Chat, Alert, TTS, Goal, Event List, Image, Sound, Text)
-- **Rule Engine:** กำหนดเงื่อนไขการทำงาน (Automation) เมื่อมีเหตุการณ์เกิดขึ้น เช่น เมื่อมีคนพิมพ์ `!hello` ให้ Alert ทำงานและมีเสียง TTS
+- **Chat-to-TTS Automation:** ข้อความแชทที่เข้ามาจะถูกอ่านออกเสียงอัตโนมัติผ่าน TTS Widget ตัวแรกที่เปิดใช้งานในแต่ละ Overlay (ยังไม่มี Rule Engine ที่ปรับแต่งเงื่อนไขเองได้ — อยู่ในแผนพัฒนาถัดไป)
 - **TTS Integration:** ระบบอ่านข้อความ (Text-to-Speech) ผ่าน Browser API โดยตรงบน Overlay
 - **Media Manager:** ระบบอัปโหลดและจัดการไฟล์รูปภาพและเสียงสำหรับใช้ใน Widgets
 
@@ -23,7 +23,7 @@ EZStream คือระบบ Live Stream Widget, Real-time Overlay และ T
 โปรเจกต์นี้เป็น **Monorepo** จัดการด้วย `pnpm` workspaces 
 
 - 🖥️ **`apps/web`**: หน้า Dashboard (Next.js), ระบบจัดการ Overlay และหน้า Overlay Preview สำหรับแสดงผลใน OBS
-- ⚙️ **`apps/api`**: Backend Service (NestJS) จัดการ REST API, JWT Authentication, Rule Engine, การอัปโหลด Media และ Socket.IO Gateway
+- ⚙️ **`apps/api`**: Backend Service (NestJS) จัดการ REST API, JWT Authentication, Chat-to-TTS Automation, การอัปโหลด Media และ Socket.IO Gateway
 - 👷 **`apps/worker`**: Background Workers (NestJS + BullMQ) สำหรับจัดการ Queue งานหนัก เช่น `live-events`, `widget-actions`, และ `tts-jobs`
 - 🗄️ **`packages/db`**: จัดการ Database Schema และ Client ด้วย Prisma
 - 📦 **`packages/shared`**: เก็บ Types และ Constants ที่ใช้ร่วมกันทั้ง Frontend และ Backend
@@ -123,9 +123,9 @@ http://localhost:3000/overlay/{overlayToken}
 
 ### การทำงานของ System Flow (โดยย่อ)
 
-1. **Creator** สร้าง Overlay, วาง Widget, และตั้ง Rule ใน Dashboard
-2. เมื่อมี **Live Event** เข้ามา (เช่น มีคนส่งของขวัญ) API จะรับ Event นั้น
-3. API ตรวจสอบเงื่อนไขกับ **Rule Engine** หากตรงเงื่อนไข จะสร้าง `WidgetAction` หรือ `TtsJob` ส่งเข้า **BullMQ**
+1. **Creator** สร้าง Overlay และวาง Widget ใน Dashboard
+2. เมื่อมี **Live Event** เข้ามา (เช่น แชท, ของขวัญ, follow) API จะรับ Event นั้นและบันทึกลง `EventLog`
+3. ปัจจุบันมีแค่ Chat-to-TTS Automation แบบอัตโนมัติ: ข้อความแชทจะสร้าง `TtsJob` ส่งเข้า Queue ให้ TTS Widget ตัวแรกที่เปิดใช้งาน (ยังไม่มี Rule Engine ที่กำหนดเงื่อนไขเองได้ — Event ประเภทอื่นเช่นของขวัญ/follow ยังไม่ trigger Widget ใด ๆ)
 4. **Worker** รับงานจาก Queue มาประมวลผล แล้ว Publish ผ่าน Redis
 5. **API (Socket Gateway)** ส่งข้อมูลให้ Client
 6. **Overlay (Web)** รับ Socket Event และแสดงผล Widget / เล่นเสียง TTS ทันที

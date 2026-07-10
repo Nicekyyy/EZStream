@@ -83,12 +83,13 @@ function isInlineEmojiUrl(value: string) {
     const host = url.hostname.toLowerCase();
     const path = url.pathname.toLowerCase();
     return (
-      /\.(?:png|webp|gif|jpe?g|svg)$/.test(path) ||
+      /\.(?:png|webp|gif|jpe?g|svg|image|avif|heic)$/.test(path) ||
       host === "yt3.ggpht.com" ||
       host.endsWith(".ggpht.com") ||
       host.endsWith(".googleusercontent.com") ||
       host.endsWith(".googleusercontent.com.ph") ||
       host.includes("tiktokcdn") ||
+      host.includes("tiktok.com") ||
       host.includes("tiktokv") ||
       host.includes("muscdn") ||
       host.includes("musical.ly") ||
@@ -214,7 +215,7 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
   const showBackground = widget.type === "VIEWER_COUNT_WIDGET" ? bool(config.showBackground, true) : true;
 
   return (
-    <section className={`absolute overflow-hidden rounded-none text-white ${showBackground ? "shadow-lg ring-1 ring-white/10" : ""}`} style={style}>
+    <section className="absolute overflow-hidden rounded-none text-white" style={style}>
       {body}
       {widget.type === "SOUND_WIDGET" && audioSource ? <audio ref={audioRef} src={audioSource} preload="auto" /> : null}
     </section>

@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, UnauthorizedException } from "@n
 import { JwtService } from "@nestjs/jwt";
 import bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { redactCreatorSettings } from "../common/redact-creator-settings.js";
 import { LoginDto, RegisterDto } from "./dto.js";
 
 function slugFromEmail(email: string) {
@@ -62,7 +63,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       role: user.role,
-      creator: user.creator
+      creator: user.creator ? redactCreatorSettings(user.creator) : null
     };
   }
 
