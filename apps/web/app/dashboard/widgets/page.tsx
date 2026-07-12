@@ -104,7 +104,7 @@ export default function WidgetsPage() {
   }
 
   return (
-    <DashboardShell title="Widgets">
+    <DashboardShell title="วิดเจ็ต">
       <PageActions>
         <Input
           className="sm:max-w-md"
@@ -137,10 +137,12 @@ export default function WidgetsPage() {
                   <Badge tone={widget.visibility ? "info" : "neutral"}>{widget.visibility ? "แสดงบน Overlay" : "ซ่อนบน Overlay"}</Badge>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-ink-subtle">
-                  <p><span className="text-ink-faint mr-1">TYPE</span> {widget.type}</p>
-                  <p><span className="text-ink-faint mr-1">OVERLAY</span> {widget.overlay?.name ?? "ยังไม่ผูก"}</p>
-                  <p><span className="text-ink-faint mr-1">POS</span> X {widget.positionX}, Y {widget.positionY}</p>
-                  <p><span className="text-ink-faint mr-1">SIZE</span> {widget.width}x{widget.height}</p>
+                  <p><span className="text-ink-faint mr-1">ประเภท</span> {widget.type}</p>
+                  <p><span className="text-ink-faint mr-1">โอเวอร์เลย์</span> {widget.overlay?.name ?? "ยังไม่ผูก"}</p>
+                  <p><span className="text-ink-faint mr-1">ตำแหน่ง</span> X {widget.positionX}, Y {widget.positionY}</p>
+                  {isAudioOnlyWidgetType(widget.type) ? null : (
+                    <p><span className="text-ink-faint mr-1">ขนาด</span> {widget.width}x{widget.height}</p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-surface-dark border-t-2 border-border-base p-4 gap-4">
