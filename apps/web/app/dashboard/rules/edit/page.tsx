@@ -2,11 +2,12 @@
 
 import { Button } from "@ezstream/ui";
 import { conditionOperators, ruleActionTypes } from "@ezstream/shared";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
-import { Field, Input, Notice, Select, Textarea } from "../../../../components/ui-kit";
+import { Badge, Field, Input, Notice, Select, Textarea } from "../../../../components/ui-kit";
 import { api } from "../../../../lib/api";
 import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-warning";
 
@@ -521,6 +522,11 @@ function RuleEditContent() {
   if (loading) {
     return (
       <DashboardShell title="แก้ไข Rule">
+        <div className="mb-5">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/dashboard/rules">กลับไปหน้า Rules</Link>
+          </Button>
+        </div>
         {error ? <Notice tone="error">{error}</Notice> : <p className="text-sm text-ink-subtle">กำลังโหลด...</p>}
       </DashboardShell>
     );
@@ -528,11 +534,22 @@ function RuleEditContent() {
 
   return (
     <DashboardShell title={isNew ? "สร้าง Rule" : "แก้ไข Rule"}>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/dashboard/rules">กลับไปหน้า Rules</Link>
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Badge tone={isEnabled ? "success" : "neutral"}>{isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
+          {!isNew ? <Badge tone="info">Priority {priority}</Badge> : null}
+        </div>
+      </div>
+
       <div className="mb-4 space-y-3">
         {message ? <Notice tone="success">{message}</Notice> : null}
         {error ? <Notice tone="error">{error}</Notice> : null}
       </div>
 
+      <div className="flex flex-col-reverse gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(420px,auto)]">
       <form className="space-y-6" onSubmit={submit}>
         <ResourceCard className="space-y-4">
           <h2 className="text-lg font-bold text-white">พื้นฐาน</h2>
@@ -626,14 +643,19 @@ function RuleEditContent() {
             disabled={busy}
             type="submit"
             size="lg"
-            className="bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold"
+            className={
+              isDirty
+                ? "bg-rose-600 text-white hover:bg-rose-500 border-rose-500 animate-pulse shadow-rose-900/20 font-semibold"
+                : "bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold"
+            }
           >
             {busy ? "กำลังบันทึก..." : "บันทึก Rule"}
           </Button>
         </div>
       </form>
 
-      <ResourceCard className="mt-8 space-y-4">
+      <aside className="sticky top-28 z-20 self-start xl:top-32">
+      <ResourceCard className="space-y-4">
         <h2 className="text-lg font-bold text-white">ทดสอบ Rule</h2>
         {isNew ? <p className="text-xs text-amber-400">บันทึก Rule ก่อนถึงจะทดสอบได้</p> : null}
         <Field label="Event type ตัวอย่าง">
@@ -676,6 +698,8 @@ function RuleEditContent() {
           </div>
         ) : null}
       </ResourceCard>
+      </aside>
+      </div>
 
       {UnsavedChangesModal}
     </DashboardShell>
