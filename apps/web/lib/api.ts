@@ -73,13 +73,25 @@ export function ensureSession(): Promise<string> {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  async function send(token: string): Promise<Response> {
+  async function send(token?: string): Promise<Response> {
     const headers = new Headers(init.headers);
     if (!headers.has("content-type") && init.body && !(init.body instanceof FormData)) {
       headers.set("content-type", "application/json");
     }
-    headers.set("authorization", `Bearer ${token}`);
+    if (token) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
     return fetch(`${API_URL}${path}`, { ...init, headers });
+  }
+
+  // Skip token / auto-login requirements for health checks
+  if (path === "/health" || path.startsWith("/health/")) {
+    const response = await send();
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `คำขอไม่สำเร็จ (${response.status})`);
+    }
+    return (await response.json()) as T;
   }
 
   let token = await ensureSession();
