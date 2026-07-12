@@ -63,6 +63,7 @@ coverage
 skills-lock.json
 .turbo
 .nx/cache
+.superpowers/
 
 # Generated outputs
 graphify-out/
