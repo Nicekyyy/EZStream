@@ -20,6 +20,8 @@ import { chatSettingsFromConfig, ChatWidgetSettings, type ChatSettingsDraft } fr
 import { viewerCountSettingsFromConfig, ViewerCountWidgetSettings } from "../../../../components/widget-settings/viewer-count-settings";
 import { alertSettingsFromConfig, AlertWidgetSettings, type AlertSettingsDraft } from "../../../../components/widget-settings/alert-settings";
 import { goalSettingsFromConfig, GoalWidgetSettings, type GoalSettingsDraft } from "../../../../components/widget-settings/goal-settings";
+import { eventListSettingsFromConfig, EventListWidgetSettings, type EventListSettingsDraft } from "../../../../components/widget-settings/event-list-settings";
+import { textSettingsFromConfig, TextWidgetSettings, type TextSettingsDraft } from "../../../../components/widget-settings/text-settings";
 
 type Overlay = { id: string; name: string; token: string; width: number; height: number };
 type EventLog = { id: string; eventType: string; payload: unknown; createdAt: string };
@@ -59,6 +61,10 @@ function draftFromWidget(widget: Widget): Record<string, unknown> | null {
       return alertSettingsFromConfig(config);
     case "GOAL_WIDGET":
       return goalSettingsFromConfig(config);
+    case "EVENT_LIST_WIDGET":
+      return eventListSettingsFromConfig(config);
+    case "TEXT_WIDGET":
+      return textSettingsFromConfig(config);
     default:
       return null;
   }
@@ -497,6 +503,14 @@ function WidgetDetailContent() {
 
           {widget && configDraft && widget.type === "GOAL_WIDGET" ? (
             <GoalWidgetSettings busy={busy} draft={configDraft as GoalSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "EVENT_LIST_WIDGET" ? (
+            <EventListWidgetSettings busy={busy} draft={configDraft as EventListSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "TEXT_WIDGET" ? (
+            <TextWidgetSettings busy={busy} draft={configDraft as TextSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
           ) : null}
 
           <ResourceCard>
