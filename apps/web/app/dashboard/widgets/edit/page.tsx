@@ -16,6 +16,7 @@ import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-wa
 import { ConfirmDeleteModal } from "../../../../components/confirm-delete-modal";
 import { CheckIcon, CopyIcon } from "../../../../components/icons";
 import { NumberField } from "../../../../components/widget-settings/fields";
+import { isAudioOnlyWidgetType } from "../../../../lib/widget-types";
 import { chatSettingsFromConfig, ChatWidgetSettings, type ChatSettingsDraft } from "../../../../components/widget-settings/chat-settings";
 import { viewerCountSettingsFromConfig, ViewerCountWidgetSettings } from "../../../../components/widget-settings/viewer-count-settings";
 import { alertSettingsFromConfig, AlertWidgetSettings, type AlertSettingsDraft } from "../../../../components/widget-settings/alert-settings";
@@ -476,13 +477,15 @@ function WidgetDetailContent() {
                 </Select>
               </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-5">
-                <NumberField disabled={busy || !widget} label="X" onChange={setPositionX} value={positionX} />
-                <NumberField disabled={busy || !widget} label="Y" onChange={setPositionY} value={positionY} />
-                <NumberField disabled={busy || !widget} label="ความกว้าง (Width)" min={1} max={widget?.overlay?.width ?? 1920} onChange={setWidth} value={width} />
-                <NumberField disabled={busy || !widget} label="ความสูง (Height)" min={1} max={widget?.overlay?.height ?? 1080} onChange={setHeight} value={height} />
-                <NumberField disabled={busy || !widget} label="Layer" onChange={setZIndex} value={zIndex} />
-              </div>
+              {widget && isAudioOnlyWidgetType(widget.type) ? null : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-5">
+                  <NumberField disabled={busy || !widget} label="X" onChange={setPositionX} value={positionX} />
+                  <NumberField disabled={busy || !widget} label="Y" onChange={setPositionY} value={positionY} />
+                  <NumberField disabled={busy || !widget} label="ความกว้าง (Width)" min={1} max={widget?.overlay?.width ?? 1920} onChange={setWidth} value={width} />
+                  <NumberField disabled={busy || !widget} label="ความสูง (Height)" min={1} max={widget?.overlay?.height ?? 1080} onChange={setHeight} value={height} />
+                  <NumberField disabled={busy || !widget} label="Layer" onChange={setZIndex} value={zIndex} />
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2 lg:col-span-2">
                 <Button 
@@ -587,9 +590,11 @@ function WidgetDetailContent() {
                 <p className="text-base font-semibold text-white">Live Preview</p>
                 <p className="mt-1 text-xs font-medium text-ink-subtle">อัปเดตทันทีระหว่างปรับค่า</p>
               </div>
-              <Badge tone="info">{Math.max(1, Number(width) || 0)} x {Math.max(1, Number(height) || 0)}</Badge>
+              {widget && isAudioOnlyWidgetType(widget.type) ? null : (
+                <Badge tone="info">{Math.max(1, Number(width) || 0)} x {Math.max(1, Number(height) || 0)}</Badge>
+              )}
             </div>
-            {widget && (widget.type === "TTS_WIDGET" || widget.type === "SOUND_WIDGET") ? (
+            {widget && isAudioOnlyWidgetType(widget.type) ? (
               <div className="border-2 border-dashed border-border-base bg-surface-dark p-6 text-center">
                 <p className="text-sm font-semibold text-white">🔊 Widget เสียง — ไม่มีภาพบนสตรีม</p>
                 <p className="mt-1 text-xs text-ink-subtle">widget นี้เล่นเสียงอย่างเดียว จะไม่แสดงอะไรบน Overlay/OBS</p>
