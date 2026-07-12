@@ -10,6 +10,7 @@ import { APP_URL, api } from "../../../lib/api";
 import { copyText } from "../../../lib/clipboard";
 import { ConfirmDeleteModal } from "../../../components/confirm-delete-modal";
 import { CheckIcon, CopyIcon, ExternalLinkIcon } from "../../../components/icons";
+import { isAudioOnlyWidgetType } from "../../../lib/widget-types";
 
 type Widget = {
   id: string;
@@ -172,9 +173,11 @@ export default function WidgetsPage() {
                   <button disabled={busyId === widget.id} onClick={() => void updateWidget(widget, { isEnabled: !widget.isEnabled })} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
                     {widget.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                   </button>
-                  <button disabled={busyId === widget.id} onClick={() => void updateWidget(widget, { visibility: !widget.visibility })} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
-                    {widget.visibility ? "ซ่อน" : "แสดง"}
-                  </button>
+                  {isAudioOnlyWidgetType(widget.type) ? null : (
+                    <button disabled={busyId === widget.id} onClick={() => void updateWidget(widget, { visibility: !widget.visibility })} className="text-sm font-medium text-ink-muted hover:text-white focus-visible:outline-none focus-visible:text-white transition-colors disabled:opacity-50">
+                      {widget.visibility ? "ซ่อน" : "แสดง"}
+                    </button>
+                  )}
                   <button disabled={busyId === widget.id} onClick={() => void deleteWidget(widget)} className="text-sm font-medium text-rose-500 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400 transition-colors disabled:opacity-50">
                     ลบ
                   </button>

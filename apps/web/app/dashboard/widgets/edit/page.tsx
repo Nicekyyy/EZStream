@@ -498,9 +498,11 @@ function WidgetDetailContent() {
                 <Button variant="secondary" disabled={busy || !widget} onClick={() => widget && void updateWidget({ isEnabled: !widget.isEnabled }, widget.isEnabled ? "ปิดใช้งาน Widget แล้ว" : "เปิดใช้งาน Widget แล้ว")} type="button">
                   {widget?.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                 </Button>
-                <Button variant="secondary" disabled={busy || !widget} onClick={() => widget && void updateWidget({ visibility: !widget.visibility }, widget.visibility ? "ซ่อน Widget แล้ว" : "แสดง Widget แล้ว")} type="button">
-                  {widget?.visibility ? "ซ่อนบน Overlay" : "แสดงบน Overlay"}
-                </Button>
+                {widget && isAudioOnlyWidgetType(widget.type) ? null : (
+                  <Button variant="secondary" disabled={busy || !widget} onClick={() => widget && void updateWidget({ visibility: !widget.visibility }, widget.visibility ? "ซ่อน Widget แล้ว" : "แสดง Widget แล้ว")} type="button">
+                    {widget?.visibility ? "ซ่อนบน Overlay" : "แสดงบน Overlay"}
+                  </Button>
+                )}
               </div>
             </form>
           </ResourceCard>
