@@ -529,9 +529,16 @@ function WidgetDetailContent() {
               </div>
               <Badge tone="info">{Math.max(1, Number(width) || 0)} x {Math.max(1, Number(height) || 0)}</Badge>
             </div>
-            <ScalableWidgetPreview width={Number(width) || 400} height={Number(height) || 160}>
-              {deferredPreviewWidget ? <WidgetRenderer widget={deferredPreviewWidget} chatMessages={isChatWidget ? deferredChatMessages : []} /> : null}
-            </ScalableWidgetPreview>
+            {widget && (widget.type === "TTS_WIDGET" || widget.type === "SOUND_WIDGET") ? (
+              <div className="border-2 border-dashed border-border-base bg-surface-dark p-6 text-center">
+                <p className="text-sm font-semibold text-white">🔊 Widget เสียง — ไม่มีภาพบนสตรีม</p>
+                <p className="mt-1 text-xs text-ink-subtle">widget นี้เล่นเสียงอย่างเดียว จะไม่แสดงอะไรบน Overlay/OBS</p>
+              </div>
+            ) : (
+              <ScalableWidgetPreview width={Number(width) || 400} height={Number(height) || 160}>
+                {deferredPreviewWidget ? <WidgetRenderer widget={deferredPreviewWidget} chatMessages={isChatWidget ? deferredChatMessages : []} /> : null}
+              </ScalableWidgetPreview>
+            )}
           </ResourceCard>
         </aside>
       </div>

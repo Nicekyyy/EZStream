@@ -48,6 +48,18 @@ function resolveMediaSrc(src: string): string {
   return src.startsWith("/") ? `${API_URL}${src}` : src;
 }
 
+function fontWeightValue(value: string): number {
+  const numeric = Number.parseInt(value, 10);
+  if (!Number.isNaN(numeric)) return clamp(numeric, 100, 900);
+  return value === "black" ? 900 : value === "bold" ? 700 : value === "medium" ? 500 : 400;
+}
+
+function fontFamilyValue(family: string): string | undefined {
+  if (!family || family === "system") return undefined;
+  if (family === "mono") return "ui-monospace, SFMono-Regular, monospace";
+  return `"${family}", sans-serif`;
+}
+
 function rgba(hex: string, alpha: number) {
   const normalized = hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex.slice(0, 7);
   const value = Number.parseInt(normalized.slice(1), 16);
@@ -188,9 +200,11 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
 
   useEffect(() => {
     if (widget.type === "SOUND_WIDGET" && state.playing && audioRef.current) {
+      audioRef.current.volume = clamp(number(config.volume, 1), 0, 1);
       audioRef.current.currentTime = 0;
       void audioRef.current.play();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widget.type, state.playing, state.lastTriggeredAt]);
 
   const body = useMemo(() => {
@@ -198,7 +212,7 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
       case "ALERT_WIDGET":
         return <AlertWidget widget={widget} />;
       case "TTS_WIDGET":
-        return <StatusWidget label="TTS" value={state.speaking ? "กำลังพูด" : `คิว ${number(state.queueLength, 0)}`} />;
+        return null;
       case "GOAL_WIDGET":
         return <GoalWidget widget={widget} />;
       case "EVENT_LIST_WIDGET":
@@ -208,7 +222,7 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
       case "IMAGE_WIDGET":
         return <ImageWidget widget={widget} />;
       case "SOUND_WIDGET":
-        return <StatusWidget label="Sound" value={state.playing ? "playing" : "ready"} />;
+        return null;
       case "TEXT_WIDGET":
         return <TextWidget widget={widget} />;
       case "VIEWER_COUNT_WIDGET":
@@ -241,10 +255,23 @@ function AlertWidget({ widget }: { widget: OverlayWidget }) {
   const state = widget.state?.state ?? {};
   const config = widget.config ?? {};
   const lastAction = (state.lastAction ?? {}) as Record<string, unknown>;
-  const message = text(state.renderedText) || text(lastAction.renderedText) || text(config.template, widget.name);
-  const durationMs = number(lastAction.durationMs, 0);
+  const message = text(state.renderedText) || text(lastAction.renderedText) || text(config.template) || widget.name;
+  const durationMs = number(lastAction.durationMs, number(config.defaultDurationMs, 0));
   const triggeredAt = typeof state.lastTriggeredAt === "string" ? Date.parse(state.lastTriggeredAt) : 0;
   const [now, setNow] = useState(() => Date.now());
+
+  const backgroundColor = rgba(color(config.backgroundColor, "#000000"), clamp(number(config.backgroundOpacity, 0.7), 0, 1));
+  const accentColor = color(config.accentColor, "#E5FC52");
+  const textColor = color(config.textColor, "#ffffff");
+  const fontSize = clamp(number(config.fontSize, 30), 10, 96);
+  const fontFamily = fontFamilyValue(text(config.fontFamily, "system"));
+  const fontWeight = fontWeightValue(text(config.fontWeight, "black"));
+  const borderRadius = clamp(number(config.borderRadius, 0), 0, 48);
+  const showLabel = bool(config.showLabel, true);
+  const textShadow = bool(config.textShadow, false) ? "0 1px 2px rgba(0,0,0,0.55)" : undefined;
+  const animationType = choice(config.animationType, ["none", "fade", "slide-up", "pop"] as const, "none");
+  const exitAnimationType = choice(config.exitAnimationType, ["none", "fade", "slide-up", "pop"] as const, animationType);
+  const animationDuration = clamp(number(config.animationDuration, 0.3), 0.1, 2);
 
   useEffect(() => {
     if (!durationMs || !triggeredAt) return;
@@ -255,15 +282,35 @@ function AlertWidget({ widget }: { widget: OverlayWidget }) {
   }, [durationMs, triggeredAt]);
 
   const visible = !durationMs || !triggeredAt || now - triggeredAt < durationMs;
-  if (!visible) return <div className="h-full" />;
+
+  const initial: Record<string, number> = {};
+  if (animationType === "fade") initial.opacity = 0;
+  if (animationType === "slide-up") { initial.opacity = 0; initial.y = 20; }
+  if (animationType === "pop") { initial.opacity = 0; initial.scale = 0.5; }
+  const exit: Record<string, number> = {};
+  if (exitAnimationType === "fade") exit.opacity = 0;
+  if (exitAnimationType === "slide-up") { exit.opacity = 0; exit.y = -20; }
+  if (exitAnimationType === "pop") { exit.opacity = 0; exit.scale = 0.5; }
 
   return (
-    <div className="flex h-full items-center gap-4 bg-black/70 p-5 border-l-4 border-primary">
-      <div>
-        <p className="mb-1 text-xs font-semibold text-ink-subtle">Alert</p>
-        <p className="text-3xl font-black leading-tight text-white">{message}</p>
-      </div>
-    </div>
+    <AnimatePresence>
+      {visible ? (
+        <motion.div
+          key={triggeredAt || "alert"}
+          initial={initial}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={exit}
+          transition={{ duration: animationDuration }}
+          className="flex h-full items-center gap-4 p-5"
+          style={{ background: backgroundColor, borderLeft: `4px solid ${accentColor}`, borderRadius, fontFamily }}
+        >
+          <div>
+            {showLabel ? <p className="mb-1 text-xs font-semibold text-ink-subtle">Alert</p> : null}
+            <p className="leading-tight" style={{ color: textColor, fontSize, fontWeight, textShadow }}>{message}</p>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }
 
@@ -271,25 +318,60 @@ function GoalWidget({ widget }: { widget: OverlayWidget }) {
   const state = widget.state?.state ?? {};
   const config = widget.config ?? {};
   const current = number(state.current, 0);
-  const target = number(state.target, number(config.target, 100));
+  const target = Math.max(1, number(state.target, number(config.target, 100)));
   const progress = Math.max(0, Math.min(100, (current / target) * 100));
+
+  const backgroundColor = rgba(color(config.backgroundColor, "#000000"), clamp(number(config.backgroundOpacity, 0.7), 0, 1));
+  const textColor = color(config.textColor, "#ffffff");
+  const barColor = color(config.barColor, "#E5FC52");
+  const barBackgroundColor = rgba(color(config.barBackgroundColor, "#0F0F13"), clamp(number(config.barBackgroundOpacity, 0.5), 0, 1));
+  const barHeight = clamp(number(config.barHeight, 24), 4, 80);
+  const fontSize = clamp(number(config.fontSize, 12), 8, 48);
+  const fontFamily = fontFamilyValue(text(config.fontFamily, "system"));
+  const fontWeight = fontWeightValue(text(config.fontWeight, "600"));
+  const borderRadius = clamp(number(config.borderRadius, 0), 0, 48);
+  const showValues = bool(config.showValues, true);
+  const showPercent = bool(config.showPercent, false);
+
   return (
-    <div className="flex h-full flex-col justify-center bg-black/70 p-5">
-      <div className="mb-3 flex justify-between text-xs font-semibold text-white"><span>{text(config.label, "Goal")}</span><span className="text-primary">{current}/{target}</span></div>
-      <div className="h-6 rounded-none bg-surface-base/50"><div className="h-full rounded-none bg-primary transition-all duration-500 ease-out" style={{ width: `${progress}%` }} /></div>
+    <div className="flex h-full flex-col justify-center p-5" style={{ background: backgroundColor, borderRadius, fontFamily }}>
+      <div className="mb-3 flex justify-between" style={{ color: textColor, fontSize, fontWeight }}>
+        <span>{text(config.label, "Goal")}</span>
+        {showValues ? (
+          <span style={{ color: barColor }}>
+            {current}/{target}
+            {showPercent ? ` (${Math.round(progress)}%)` : ""}
+          </span>
+        ) : null}
+      </div>
+      <div style={{ height: barHeight, background: barBackgroundColor, borderRadius }}>
+        <div className="h-full transition-all duration-500 ease-out" style={{ width: `${progress}%`, background: barColor, borderRadius }} />
+      </div>
     </div>
   );
 }
 
 function EventListWidget({ widget }: { widget: OverlayWidget }) {
-  const items = Array.isArray(widget.state?.state?.items) ? widget.state?.state?.items.slice(0, 8) : [];
+  const config = widget.config ?? {};
+  const maxItems = Math.round(clamp(number(config.maxItems, 8), 1, 20));
+  const items = Array.isArray(widget.state?.state?.items) ? widget.state.state.items.slice(0, maxItems) : [];
+  const backgroundColor = rgba(color(config.backgroundColor, "#000000"), clamp(number(config.backgroundOpacity, 0.7), 0, 1));
+  const itemBackground = rgba(color(config.itemBackgroundColor, "#0F0F13"), clamp(number(config.itemBackgroundOpacity, 0.4), 0, 1));
+  const accentColor = color(config.accentColor, "#E5FC52");
+  const textColor = color(config.textColor, "#ffffff");
+  const fontSize = clamp(number(config.fontSize, 12), 8, 32);
+  const fontFamily = fontFamilyValue(text(config.fontFamily, "system"));
+  const fontWeight = fontWeightValue(text(config.fontWeight, "bold"));
+  const borderRadius = clamp(number(config.borderRadius, 0), 0, 32);
+  const showHeader = bool(config.showHeader, true);
+
   return (
-    <div className="h-full space-y-3 overflow-hidden bg-black/70 p-4">
-      <p className="mb-2 text-xs font-semibold text-ink-subtle">Recent Events</p>
+    <div className="h-full space-y-3 overflow-hidden p-4" style={{ background: backgroundColor, fontFamily }}>
+      {showHeader ? <p className="mb-2 text-xs font-semibold text-ink-subtle">{text(config.headerText, "Recent Events")}</p> : null}
       {items.map((item, index) => {
         const renderedText = item && typeof item === "object" ? text((item as Record<string, unknown>).renderedText) : "";
         return (
-          <p key={index} className="truncate rounded-none border-l-2 border-primary bg-surface-base/40 px-3 py-2 text-xs font-bold text-white">
+          <p key={index} className="truncate px-3 py-2" style={{ background: itemBackground, borderLeft: `2px solid ${accentColor}`, color: textColor, fontSize, fontWeight, borderRadius }}>
             {renderedText || JSON.stringify(item)}
           </p>
         );
@@ -725,11 +807,16 @@ function ChatWidget({ widget, chatMessages }: { widget: OverlayWidget; chatMessa
 
 function ImageWidget({ widget }: { widget: OverlayWidget }) {
   const state = widget.state?.state ?? {};
-  const rawSrc = text(widget.config.src) || text(widget.config.url) || text(state.src);
+  const config = widget.config ?? {};
+  const rawSrc = text(config.src) || text(config.url) || text(state.src);
   const src = rawSrc ? resolveMediaSrc(rawSrc) : "";
   const lastAction = (state.lastAction ?? {}) as Record<string, unknown>;
-  const durationMs = number(lastAction.durationMs, 0);
+  const showMode = choice(config.showMode, ["always", "triggered"] as const, "always");
+  const durationMs = number(lastAction.durationMs, number(config.defaultDurationMs, showMode === "triggered" ? 5000 : 0));
   const triggeredAt = typeof state.lastTriggeredAt === "string" ? Date.parse(state.lastTriggeredAt) : 0;
+  const fit = choice(config.fit, ["contain", "cover", "fill"] as const, "contain");
+  const opacity = clamp(number(config.opacity, 1), 0, 1);
+  const borderRadius = clamp(number(config.borderRadius, 0), 0, 200);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -740,16 +827,36 @@ function ImageWidget({ widget }: { widget: OverlayWidget }) {
     return () => clearTimeout(timer);
   }, [durationMs, triggeredAt]);
 
-  const visible = !durationMs || !triggeredAt || now - triggeredAt < durationMs;
+  const withinDuration = triggeredAt > 0 && durationMs > 0 && now - triggeredAt < durationMs;
+  const visible = showMode === "triggered" ? withinDuration : !durationMs || !triggeredAt || now - triggeredAt < durationMs;
   if (!src || !visible) return src ? <div className="h-full" /> : <StatusWidget label="Image" value="ยังไม่มีรูป" />;
 
-  return <img src={src} alt={widget.name} className="h-full w-full object-contain" />;
+  return <img src={src} alt={widget.name} className="h-full w-full" style={{ objectFit: fit, opacity, borderRadius }} />;
 }
 
 function TextWidget({ widget }: { widget: OverlayWidget }) {
-  const value = text(widget.state?.state?.text) || text(widget.config.text, widget.name);
-  const fontSize = number(widget.config.fontSize, 28);
-  return <div className="flex h-full items-center bg-black/70 p-4 font-black" style={{ fontSize }}>{value}</div>;
+  const config = widget.config ?? {};
+  const value = text(widget.state?.state?.text) || text(config.text) || widget.name;
+  const fontSize = clamp(number(config.fontSize, 28), 8, 200);
+  const fontFamily = fontFamilyValue(text(config.fontFamily, "system"));
+  const fontWeight = fontWeightValue(text(config.fontWeight, "black"));
+  const textColor = color(config.textColor, "#ffffff");
+  const align = choice(config.align, ["left", "center", "right"] as const, "left");
+  const backgroundColor = rgba(color(config.backgroundColor, "#000000"), clamp(number(config.backgroundOpacity, 0.7), 0, 1));
+  const padding = clamp(number(config.padding, 16), 0, 80);
+  const borderRadius = clamp(number(config.borderRadius, 0), 0, 48);
+  const shadow = bool(config.textShadow, false) ? "0 1px 2px rgba(0,0,0,0.55)" : "";
+  const strokeWidth = clamp(number(config.textStrokeWidth, 0), 0, 10);
+  const strokeColor = color(config.textStrokeColor, "#000000");
+  const stroke = useMemo(() => getSmoothOutlineShadows(strokeWidth, strokeColor), [strokeWidth, strokeColor]);
+  const justifyContent = align === "center" ? "center" : align === "right" ? "flex-end" : "flex-start";
+  const textShadow = [stroke, shadow].filter(Boolean).join(", ") || undefined;
+
+  return (
+    <div className="flex h-full items-center" style={{ background: backgroundColor, padding, borderRadius, justifyContent }}>
+      <span style={{ color: textColor, fontSize, fontFamily, fontWeight, textAlign: align, textShadow }}>{value}</span>
+    </div>
+  );
 }
 
 function ViewerCountWidget({ widget }: { widget: OverlayWidget }) {
