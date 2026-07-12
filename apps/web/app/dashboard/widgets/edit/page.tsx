@@ -190,6 +190,11 @@ function WidgetDetailContent() {
 
   const previewWidget = useMemo<OverlayWidget | null>(() => {
     if (!widget) return null;
+    // Alert/Image visibility depends on how long ago the real widget last triggered
+    // (state.lastTriggeredAt). That timestamp is stale in this editor context, so once a
+    // duration is configured it would immediately read as "expired" and vanish. The settings
+    // preview should always show the current template/image regardless of real trigger timing.
+    const usesTriggerTiming = widget.type === "ALERT_WIDGET" || widget.type === "IMAGE_WIDGET";
     return {
       id: widget.id,
       name: draftName || widget.name,
@@ -201,7 +206,7 @@ function WidgetDetailContent() {
       zIndex: Number(zIndex) || 0,
       visibility: true,
       config: previewConfig,
-      state: widget.state && typeof widget.state.state === "object" && !Array.isArray(widget.state.state)
+      state: !usesTriggerTiming && widget.state && typeof widget.state.state === "object" && !Array.isArray(widget.state.state)
         ? { state: widget.state.state as Record<string, unknown> }
         : undefined
     };
