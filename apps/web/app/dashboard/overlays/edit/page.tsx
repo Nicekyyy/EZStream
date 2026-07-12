@@ -74,7 +74,7 @@ function ScalableIframePreview({ url, draftWidth, draftHeight, snapEnabled }: { 
           ref={iframeRef}
           src={`${url}&editor=true`} 
           style={{ width: targetWidth, height: targetHeight, border: "none", display: "block" }} 
-          title="Overlay Preview" 
+          title="ตัวอย่างโอเวอร์เลย์"
         />
       </div>
     </div>
@@ -336,7 +336,7 @@ function OverlayDetailContent() {
               <p className="font-medium text-white">ดูตัวอย่าง & แก้ไข</p>
               <div className="flex items-center space-x-2 text-sm bg-slate-900/50 p-2 rounded-md border border-slate-700">
                 <input type="checkbox" id="snap-toggle" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} className="cursor-pointer" />
-                <label htmlFor="snap-toggle" className="cursor-pointer select-none text-slate-300">Snap to Guides</label>
+                <label htmlFor="snap-toggle" className="cursor-pointer select-none text-slate-300">ดูดติดเส้นไกด์</label>
               </div>
             </div>
             <ScalableIframePreview url={url} draftWidth={debouncedWidth} draftHeight={debouncedHeight} snapEnabled={snapEnabled} />

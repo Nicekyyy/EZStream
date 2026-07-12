@@ -78,7 +78,7 @@ export function TextWidgetSettings({ busy, draft, isDirty, onDraftChange, onSave
           <RangeField disabled={busy} label="ความโปร่งใสพื้นหลัง" min={0} max={1} step={0.05} value={draft.backgroundOpacity} onChange={(value) => setValue("backgroundOpacity", value)} />
           <RangeField disabled={busy} label="ขนาดตัวอักษร" min={8} max={120} step={1} value={draft.fontSize} onChange={(value) => setValue("fontSize", value)} />
           <FontSettings disabled={busy} family={draft.fontFamily} weight={draft.fontWeight} onFamilyChange={(value) => setValue("fontFamily", value)} onWeightChange={(value) => setValue("fontWeight", value)} />
-          <RangeField disabled={busy} label="Padding" min={0} max={80} step={1} value={draft.padding} onChange={(value) => setValue("padding", value)} />
+          <RangeField disabled={busy} label="ระยะขอบใน (Padding)" min={0} max={80} step={1} value={draft.padding} onChange={(value) => setValue("padding", value)} />
           <RangeField disabled={busy} label="มุมโค้ง (Border Radius)" min={0} max={48} step={1} value={draft.borderRadius} onChange={(value) => setValue("borderRadius", value)} />
           <ToggleField disabled={busy} label="เงาตัวอักษร" checked={draft.textShadow} onChange={(value) => setValue("textShadow", value)} />
           <RangeField disabled={busy} label="ความหนาขอบอักษร" min={0} max={10} step={1} value={draft.textStrokeWidth} onChange={(value) => setValue("textStrokeWidth", value)} />

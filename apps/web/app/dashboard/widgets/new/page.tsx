@@ -25,7 +25,7 @@ const widgetTypes = [
 export default function NewWidgetPage() {
   const router = useRouter();
   const [overlays, setOverlays] = useState<{ id: string; name: string }[]>([]);
-  const [name, setName] = useState("New Widget");
+  const [name, setName] = useState("วิดเจ็ตใหม่");
   const [type, setType] = useState("CHAT_WIDGET");
   const [overlayId, setOverlayId] = useState("");
   const [width, setWidth] = useState(420);
@@ -41,7 +41,7 @@ export default function NewWidgetPage() {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลด Overlay ไม่สำเร็จ"));
   }, []);
 
-  const isDirty = name !== "New Widget" || type !== "CHAT_WIDGET" || overlayId !== "" || width !== 420 || height !== 160;
+  const isDirty = name !== "วิดเจ็ตใหม่" || type !== "CHAT_WIDGET" || overlayId !== "" || width !== 420 || height !== 160;
   const { UnsavedChangesModal } = useUnsavedChangesWarning(isDirty);
 
   async function submit(event: FormEvent) {
@@ -82,7 +82,7 @@ export default function NewWidgetPage() {
             <Input onChange={(event) => setName(event.target.value)} value={name} />
           </Field>
 
-          <Field label="Overlay">
+          <Field label="โอเวอร์เลย์">
             <Select onChange={(event) => setOverlayId(event.target.value)} value={overlayId}>
               <option value="">ยังไม่ผูก Overlay</option>
               {overlays.length ? (

@@ -112,7 +112,7 @@ export default function LoginPage() {
         
         <div className="relative w-full max-w-sm border-2 border-accent bg-surface-base p-8 shadow-[12px_12px_0_0_var(--color-accent)] transition-transform duration-500 hover:-translate-y-2">
           <div className="mb-6 flex items-center justify-between">
-            <div className="text-xl font-black uppercase tracking-tight text-white">Sub Goal</div>
+            <div className="text-xl font-black uppercase tracking-tight text-white">เป้าหมายย่อย</div>
             <span className="text-sm font-bold text-primary">85 / 100</span>
           </div>
           
@@ -122,7 +122,7 @@ export default function LoginPage() {
 
           <div className="mt-6 flex items-center space-x-3 text-sm text-slate-400 font-medium">
             <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            <span>LIVE PREVIEW</span>
+            <span>ตัวอย่างสด</span>
           </div>
         </div>
       </div>

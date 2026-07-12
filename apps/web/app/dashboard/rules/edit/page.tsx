@@ -4,10 +4,11 @@ import { Button } from "@ezstream/ui";
 import { conditionOperators, ruleActionTypes } from "@ezstream/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useId, useMemo, useState } from "react";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { ResourceCard } from "../../../../components/resource-card";
 import { Badge, Field, Input, Notice, Select, Textarea } from "../../../../components/ui-kit";
+import { ToggleField } from "../../../../components/widget-settings/fields";
 import { api } from "../../../../lib/api";
 import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-warning";
 
@@ -208,10 +209,43 @@ function ConditionGroupEditor({
   );
 }
 
+function insertFieldToken(elementId: string, current: string, token: string, onChange: (next: string) => void) {
+  const el = document.getElementById(elementId) as HTMLInputElement | HTMLTextAreaElement | null;
+  const start = el?.selectionStart ?? current.length;
+  const end = el?.selectionEnd ?? current.length;
+  onChange(current.slice(0, start) + token + current.slice(end));
+  requestAnimationFrame(() => {
+    const pos = start + token.length;
+    el?.focus();
+    el?.setSelectionRange(pos, pos);
+  });
+}
+
+function FieldChips({ elementId, fields, current, onChange }: { elementId: string; fields: string[]; current: string; onChange: (next: string) => void }) {
+  if (fields.length === 0) {
+    return <p className="mt-1.5 text-xs text-ink-faint">เลือก Trigger event ก่อนเพื่อดู field ที่ใช้ได้</p>;
+  }
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {fields.map((f) => (
+        <button
+          key={f}
+          type="button"
+          onClick={() => insertFieldToken(elementId, current, `{${f}}`, onChange)}
+          className="rounded-none border border-border-base bg-surface-card px-2 py-0.5 font-mono text-[11px] text-ink-muted hover:border-primary hover:text-primary"
+        >
+          {`{${f}}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ActionEditor({
   action,
   widgets,
   mediaAssets,
+  availableFields,
   onChange,
   onRemove,
   isRandomChild
@@ -219,10 +253,13 @@ function ActionEditor({
   action: RuleAction;
   widgets: Widget[];
   mediaAssets: MediaAsset[];
+  availableFields: string[];
   onChange: (next: RuleAction) => void;
   onRemove: () => void;
   isRandomChild: boolean;
 }) {
+  const textFieldId = useId();
+  const amountFieldId = useId();
   const requiredWidgetType = action.type === "SPEAK_TTS" ? "TTS_WIDGET" : ACTION_WIDGET_TYPE[action.type];
   const compatibleWidgets = requiredWidgetType ? widgets.filter((w) => w.type === requiredWidgetType) : [];
   const needsMedia = action.type === "PLAY_SOUND" || action.type === "SHOW_IMAGE";
@@ -248,7 +285,7 @@ function ActionEditor({
       </div>
 
       {action.type === "RANDOM" ? (
-        <RandomActionEditor action={action} widgets={widgets} mediaAssets={mediaAssets} onChange={onChange} />
+        <RandomActionEditor action={action} widgets={widgets} mediaAssets={mediaAssets} availableFields={availableFields} onChange={onChange} />
       ) : (
         <>
           {requiredWidgetType ? (
@@ -279,8 +316,19 @@ function ActionEditor({
           ) : null}
 
           {needsText ? (
-            <Field label="ข้อความ" hint="ใช้ {field} แทนค่าจาก event เช่น {displayName}, {message}, {giftName}">
-              <Textarea rows={2} value={action.textTemplate ?? ""} onChange={(event) => onChange({ ...action, textTemplate: event.target.value })} />
+            <Field label="ข้อความ" hint="ใช้ {field} แทนค่าจาก event">
+              <Textarea
+                id={textFieldId}
+                rows={2}
+                value={action.textTemplate ?? ""}
+                onChange={(event) => onChange({ ...action, textTemplate: event.target.value })}
+              />
+              <FieldChips
+                elementId={textFieldId}
+                fields={availableFields}
+                current={action.textTemplate ?? ""}
+                onChange={(next) => onChange({ ...action, textTemplate: next })}
+              />
             </Field>
           ) : null}
 
@@ -297,8 +345,18 @@ function ActionEditor({
           ) : null}
 
           {needsAmount ? (
-            <Field label="จำนวนที่เพิ่ม" hint="ใส่ตัวเลข หรือ {field} เช่น {coins}">
-              <Input value={action.amount ?? "1"} onChange={(event) => onChange({ ...action, amount: event.target.value })} />
+            <Field label="จำนวนที่เพิ่ม" hint="ใส่ตัวเลข หรือ {field}">
+              <Input
+                id={amountFieldId}
+                value={action.amount ?? "1"}
+                onChange={(event) => onChange({ ...action, amount: event.target.value })}
+              />
+              <FieldChips
+                elementId={amountFieldId}
+                fields={availableFields}
+                current={action.amount ?? "1"}
+                onChange={(next) => onChange({ ...action, amount: next })}
+              />
             </Field>
           ) : null}
         </>
@@ -311,11 +369,13 @@ function RandomActionEditor({
   action,
   widgets,
   mediaAssets,
+  availableFields,
   onChange
 }: {
   action: RuleAction;
   widgets: Widget[];
   mediaAssets: MediaAsset[];
+  availableFields: string[];
   onChange: (next: RuleAction) => void;
 }) {
   const children = action.actions ?? [];
@@ -345,6 +405,7 @@ function RandomActionEditor({
           action={child}
           widgets={widgets}
           mediaAssets={mediaAssets}
+          availableFields={availableFields}
           onChange={(next) => updateChild(index, next)}
           onRemove={() => removeChild(index)}
           isRandomChild
@@ -546,7 +607,7 @@ function RuleEditContent() {
         </Button>
         <div className="flex flex-wrap gap-2">
           <Badge tone={isEnabled ? "success" : "neutral"}>{isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
-          {!isNew ? <Badge tone="info">Priority {priority}</Badge> : null}
+          {!isNew ? <Badge tone="info">ลำดับความสำคัญ {priority}</Badge> : null}
         </div>
       </div>
 
@@ -555,7 +616,7 @@ function RuleEditContent() {
         {error ? <Notice tone="error">{error}</Notice> : null}
       </div>
 
-      <div className="flex flex-col-reverse gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(420px,auto)]">
+      <div className="flex flex-col-reverse gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_420px]">
       <form className="space-y-6" onSubmit={submit}>
         <ResourceCard className="space-y-4">
           <h2 className="text-lg font-bold text-white">พื้นฐาน</h2>
@@ -566,31 +627,36 @@ function RuleEditContent() {
             <Field label="ลำดับความสำคัญ" hint="เลขน้อย = ประเมินก่อน">
               <Input type="number" value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
             </Field>
-            <label className="flex items-center gap-2 pt-6 text-sm font-semibold text-ink-muted">
-              <input type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
-              เปิดใช้งาน
-            </label>
-            <label className="flex items-center gap-2 pt-6 text-sm font-semibold text-ink-muted">
-              <input type="checkbox" checked={stopOnMatch} onChange={(event) => setStopOnMatch(event.target.checked)} />
-              หยุดประเมิน rule อื่นถ้า match
-            </label>
+            <div className="pt-6">
+              <ToggleField checked={isEnabled} disabled={false} label="เปิดใช้งาน" onChange={setIsEnabled} />
+            </div>
+            <div className="pt-6">
+              <ToggleField checked={stopOnMatch} disabled={false} label="หยุดประเมิน rule อื่นถ้า match" onChange={setStopOnMatch} />
+            </div>
           </div>
         </ResourceCard>
 
         <ResourceCard className="space-y-4">
           <h2 className="text-lg font-bold text-white">Trigger</h2>
           <div className="flex flex-wrap gap-3">
-            {EVENT_TYPE_OPTIONS.map((option) => (
-              <label
-                key={option.value}
-                className={`flex items-center gap-2 border-2 px-3 py-2 text-sm font-semibold transition-colors ${
-                  eventTypes.includes(option.value) ? "border-primary text-primary" : "border-border-base text-ink-subtle"
-                }`}
-              >
-                <input type="checkbox" checked={eventTypes.includes(option.value)} onChange={() => toggleEventType(option.value)} />
-                {option.label}
-              </label>
-            ))}
+            {EVENT_TYPE_OPTIONS.map((option) => {
+              const active = eventTypes.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleEventType(option.value)}
+                  className={`border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base ${
+                    active
+                      ? "border-primary bg-primary/10 text-primary shadow-brutal-sm"
+                      : "border-border-base bg-surface-base text-ink-subtle hover:border-ink-faint hover:bg-surface-dark hover:text-white"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
         </ResourceCard>
 
@@ -614,6 +680,7 @@ function RuleEditContent() {
               action={action}
               widgets={widgets}
               mediaAssets={mediaAssets}
+              availableFields={availableFields}
               onChange={(next) => updateAction(index, next)}
               onRemove={() => removeAction(index)}
               isRandomChild={false}
@@ -648,12 +715,7 @@ function RuleEditContent() {
           <Button
             disabled={busy}
             type="submit"
-            size="lg"
-            className={
-              isDirty
-                ? "bg-rose-600 text-white hover:bg-rose-500 border-rose-500 animate-pulse shadow-rose-900/20 font-semibold"
-                : "bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold"
-            }
+            className={isDirty ? "bg-rose-600 text-white hover:bg-rose-500 border-rose-500 animate-pulse shadow-rose-900/20" : ""}
           >
             {busy ? "กำลังบันทึก..." : "บันทึก Rule"}
           </Button>

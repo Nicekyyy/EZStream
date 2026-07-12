@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ResourceCard } from "../resource-card";
 import { Field, Input, Select } from "../ui-kit";
 import { configNumber, configString } from "./config";
@@ -18,16 +19,36 @@ export function soundSettingsFromConfig(config: Record<string, unknown>): SoundS
   };
 }
 
-export function SoundWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraftChange, onSave }: {
+export function SoundWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraftChange, onSave, onUploadMedia }: {
   busy: boolean;
   draft: SoundSettingsDraft;
   isDirty: boolean;
   mediaAssets: MediaAssetOption[];
   onDraftChange: (draft: SoundSettingsDraft) => void;
   onSave: () => Promise<void>;
+  onUploadMedia: (file: File) => Promise<MediaAssetOption>;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
   function setValue<K extends keyof SoundSettingsDraft>(key: K, value: SoundSettingsDraft[K]) {
     onDraftChange({ ...draft, [key]: value });
+  }
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      setUploading(true);
+      setUploadError("");
+      const asset = await onUploadMedia(file);
+      setValue("src", asset.publicPath);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "อัปโหลดเสียงไม่สำเร็จ");
+    } finally {
+      setUploading(false);
+    }
   }
 
   const audioAssets = mediaAssets.filter((asset) => asset.type === "AUDIO");
@@ -56,6 +77,16 @@ export function SoundWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraft
           </Field>
           <Field label="หรือใส่ URL เสียงโดยตรง">
             <Input disabled={busy} placeholder="https://... หรือ /storage/..." value={draft.src} onChange={(event) => setValue("src", event.target.value)} />
+          </Field>
+          <Field hint={uploadError ? undefined : "รองรับ MP3, WAV, OGG"} label="หรืออัปโหลดจากคอมพิวเตอร์">
+            <input
+              accept="audio/mpeg,audio/wav,audio/ogg"
+              className="block w-full text-sm text-ink-subtle file:mr-4 file:cursor-pointer file:border-2 file:border-border-base file:bg-surface-dark file:px-4 file:py-2 file:text-sm file:font-bold file:text-white file:transition-colors hover:file:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy || uploading}
+              onChange={handleUpload}
+              type="file"
+            />
+            {uploadError ? <span className="mt-1.5 block text-xs leading-5 text-rose-400">{uploadError}</span> : null}
           </Field>
           <RangeField disabled={busy} label="ความดัง (Volume)" min={0} max={1} step={0.05} value={draft.volume} onChange={(value) => setValue("volume", value)} />
         </div>

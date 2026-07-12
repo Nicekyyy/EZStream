@@ -128,7 +128,7 @@ export default function RulesPage() {
   }
 
   return (
-    <DashboardShell title="Rules">
+    <DashboardShell title="กฎการทำงาน">
       <PageActions>
         <Input className="sm:max-w-md" onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหา Rule" value={query} />
         <Button asChild className="bg-primary text-black border-2 border-transparent hover:border-white shadow-none hover:shadow-brutal-sm transition-all active:translate-y-1 font-semibold">
@@ -155,10 +155,10 @@ export default function RulesPage() {
                   <Badge tone={rule.isEnabled ? "success" : "neutral"}>{rule.isEnabled ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-ink-subtle">
-                  <p><span className="text-ink-faint mr-1">TRIGGER</span> {rule.eventTypes.map((type) => EVENT_TYPE_LABELS[type] ?? type).join(", ") || "ไม่มี"}</p>
+                  <p><span className="text-ink-faint mr-1">ทริกเกอร์</span> {rule.eventTypes.map((type) => EVENT_TYPE_LABELS[type] ?? type).join(", ") || "ไม่มี"}</p>
                   <p><span className="text-ink-faint mr-1">เงื่อนไข</span> {conditionCount(rule.conditions)} ข้อ</p>
-                  <p><span className="text-ink-faint mr-1">ACTIONS</span> {rule.actions?.length ?? 0}</p>
-                  <p><span className="text-ink-faint mr-1">PRIORITY</span> {rule.priority}</p>
+                  <p><span className="text-ink-faint mr-1">การกระทำ</span> {rule.actions?.length ?? 0}</p>
+                  <p><span className="text-ink-faint mr-1">ลำดับความสำคัญ</span> {rule.priority}</p>
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-surface-dark border-t-2 border-border-base p-4 gap-4">

@@ -1,4 +1,5 @@
 import { Inject, OnModuleDestroy } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { ConnectedSocket, MessageBody, OnGatewayDisconnect, OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -21,7 +22,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(REDIS) private readonly redis: any
+    @Inject(REDIS) private readonly redis: any,
+    @Inject(JwtService) private readonly jwt: JwtService
   ) {}
 
   async afterInit(server: Server) {
@@ -53,6 +55,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
     if (body.overlayId) socket.join(`overlay:${body.overlayId}`);
     if (body.widgetId) socket.join(`widget:${body.widgetId}`);
     socket.emit("overlay.connected", { socketId: socket.id, overlayToken: body.token });
+    return { joined: true };
+  }
+
+  @SubscribeMessage("creator.join")
+  async joinCreator(@ConnectedSocket() socket: Socket) {
+    const token = socket.handshake.auth?.token;
+    if (typeof token !== "string" || !token) return { joined: false };
+
+    let payload: { sub?: string };
+    try {
+      payload = await this.jwt.verifyAsync(token);
+    } catch {
+      return { joined: false };
+    }
+    if (!payload.sub) return { joined: false };
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: { creator: true }
+    });
+    const creatorId = user?.creator?.id;
+    if (!creatorId) return { joined: false };
+
+    socket.join(`creator:${creatorId}`);
     return { joined: true };
   }
 

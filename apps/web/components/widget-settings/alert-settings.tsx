@@ -45,9 +45,9 @@ export function alertSettingsFromConfig(config: Record<string, unknown>): AlertS
 
 const ANIMATION_OPTIONS = [
   { value: "none", label: "ไม่มี" },
-  { value: "fade", label: "Fade" },
-  { value: "slide-up", label: "Slide Up" },
-  { value: "pop", label: "Pop" }
+  { value: "fade", label: "ค่อยๆ ปรากฏ (Fade)" },
+  { value: "slide-up", label: "เลื่อนขึ้น (Slide Up)" },
+  { value: "pop", label: "Pop (เด้ง)" }
 ];
 
 export function AlertWidgetSettings({ busy, draft, isDirty, onDraftChange, onSave }: {

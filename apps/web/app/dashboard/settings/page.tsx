@@ -161,7 +161,7 @@ export default function SettingsPage() {
         <ResourceCard>
           <div className="flex flex-col gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-white">Google Cloud TTS Credentials</h2>
+              <h2 className="text-lg font-semibold text-white">ข้อมูลรับรอง Google Cloud TTS</h2>
               <p className="text-sm text-ink-subtle mt-1">
                 อัปโหลดไฟล์ Service Account JSON จาก Google Cloud Console เพื่อใช้ Text-to-Speech
               </p>

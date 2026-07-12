@@ -391,6 +391,14 @@ function WidgetDetailContent() {
     await updateWidget({ config: { ...widgetConfig, ...configDraft } }, "บันทึกการตั้งค่า Widget แล้ว");
   }
 
+  async function uploadMedia(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const asset = await api<MediaAssetOption>("/media/upload", { method: "POST", body: formData });
+    setMediaAssets((prev) => [asset, ...prev]);
+    return asset;
+  }
+
   async function testTrigger() {
     try {
       setBusy(true);
@@ -454,7 +462,7 @@ function WidgetDetailContent() {
         {message ? <Notice tone="success">{message}</Notice> : null}
       </div>
 
-      <div className="flex flex-col-reverse gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(420px,auto)]">
+      <div className="flex flex-col-reverse gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-4">
           <ResourceCard>
             <div className="mb-5">
@@ -468,13 +476,20 @@ function WidgetDetailContent() {
               <Field label="ชื่อ Widget">
                 <Input disabled={busy || !widget} onChange={(event) => setDraftName(event.target.value)} value={draftName} />
               </Field>
-              <Field label="Overlay">
-                <Select disabled={busy || !widget} onChange={(event) => setDraftOverlayId(event.target.value)} value={draftOverlayId}>
-                  <option value="">ยังไม่ผูก Overlay</option>
-                  {overlays.map((overlay) => (
-                    <option key={overlay.id} value={overlay.id}>{overlay.name}</option>
-                  ))}
-                </Select>
+              <Field label="โอเวอร์เลย์">
+                <div className="flex gap-2">
+                  <Select disabled={busy || !widget} onChange={(event) => setDraftOverlayId(event.target.value)} value={draftOverlayId}>
+                    <option value="">ยังไม่ผูก Overlay</option>
+                    {overlays.map((overlay) => (
+                      <option key={overlay.id} value={overlay.id}>{overlay.name}</option>
+                    ))}
+                  </Select>
+                  {widget?.overlayId ? (
+                    <Button variant="secondary" size="sm" asChild className="shrink-0">
+                      <Link href={`/dashboard/overlays/edit?id=${widget.overlayId}`}>ไปยัง Overlay</Link>
+                    </Button>
+                  ) : null}
+                </div>
               </Field>
 
               {widget && isAudioOnlyWidgetType(widget.type) ? null : (
@@ -483,7 +498,7 @@ function WidgetDetailContent() {
                   <NumberField disabled={busy || !widget} label="Y" onChange={setPositionY} value={positionY} />
                   <NumberField disabled={busy || !widget} label="ความกว้าง (Width)" min={1} max={widget?.overlay?.width ?? 1920} onChange={setWidth} value={width} />
                   <NumberField disabled={busy || !widget} label="ความสูง (Height)" min={1} max={widget?.overlay?.height ?? 1080} onChange={setHeight} value={height} />
-                  <NumberField disabled={busy || !widget} label="Layer" onChange={setZIndex} value={zIndex} />
+                  <NumberField disabled={busy || !widget} label="ลำดับชั้น (Layer)" onChange={setZIndex} value={zIndex} />
                 </div>
               )}
 
@@ -539,11 +554,11 @@ function WidgetDetailContent() {
           ) : null}
 
           {widget && configDraft && widget.type === "IMAGE_WIDGET" ? (
-            <ImageWidgetSettings busy={busy} draft={configDraft as ImageSettingsDraft} isDirty={isConfigDirty} mediaAssets={mediaAssets} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+            <ImageWidgetSettings busy={busy} draft={configDraft as ImageSettingsDraft} isDirty={isConfigDirty} mediaAssets={mediaAssets} onDraftChange={setConfigDraft} onSave={saveConfigSettings} onUploadMedia={uploadMedia} />
           ) : null}
 
           {widget && configDraft && widget.type === "SOUND_WIDGET" ? (
-            <SoundWidgetSettings busy={busy} draft={configDraft as SoundSettingsDraft} isDirty={isConfigDirty} mediaAssets={mediaAssets} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+            <SoundWidgetSettings busy={busy} draft={configDraft as SoundSettingsDraft} isDirty={isConfigDirty} mediaAssets={mediaAssets} onDraftChange={setConfigDraft} onSave={saveConfigSettings} onUploadMedia={uploadMedia} />
           ) : null}
 
           {widget && configDraft && widget.type === "TTS_WIDGET" ? (
@@ -591,7 +606,7 @@ function WidgetDetailContent() {
           <ResourceCard>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p className="text-base font-semibold text-white">Live Preview</p>
+                <p className="text-base font-semibold text-white">ตัวอย่างสด</p>
                 <p className="mt-1 text-xs font-medium text-ink-subtle">อัปเดตทันทีระหว่างปรับค่า</p>
               </div>
               {widget && isAudioOnlyWidgetType(widget.type) ? null : (

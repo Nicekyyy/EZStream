@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ResourceCard } from "../resource-card";
 import { Field, Input, Select } from "../ui-kit";
 import { configNumber, configString } from "./config";
@@ -27,16 +28,36 @@ export function imageSettingsFromConfig(config: Record<string, unknown>): ImageS
   };
 }
 
-export function ImageWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraftChange, onSave }: {
+export function ImageWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraftChange, onSave, onUploadMedia }: {
   busy: boolean;
   draft: ImageSettingsDraft;
   isDirty: boolean;
   mediaAssets: MediaAssetOption[];
   onDraftChange: (draft: ImageSettingsDraft) => void;
   onSave: () => Promise<void>;
+  onUploadMedia: (file: File) => Promise<MediaAssetOption>;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
   function setValue<K extends keyof ImageSettingsDraft>(key: K, value: ImageSettingsDraft[K]) {
     onDraftChange({ ...draft, [key]: value });
+  }
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      setUploading(true);
+      setUploadError("");
+      const asset = await onUploadMedia(file);
+      setValue("src", asset.publicPath);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "อัปโหลดรูปไม่สำเร็จ");
+    } finally {
+      setUploading(false);
+    }
   }
 
   const imageAssets = mediaAssets.filter((asset) => asset.type === "IMAGE");
@@ -66,8 +87,18 @@ export function ImageWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraft
           <Field label="หรือใส่ URL รูปโดยตรง">
             <Input disabled={busy} placeholder="https://... หรือ /storage/..." value={draft.src} onChange={(event) => setValue("src", event.target.value)} />
           </Field>
+          <Field hint={uploadError ? undefined : "รองรับ PNG, JPEG, WEBP"} label="หรืออัปโหลดจากคอมพิวเตอร์">
+            <input
+              accept="image/png,image/jpeg,image/webp"
+              className="block w-full text-sm text-ink-subtle file:mr-4 file:cursor-pointer file:border-2 file:border-border-base file:bg-surface-dark file:px-4 file:py-2 file:text-sm file:font-bold file:text-white file:transition-colors hover:file:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy || uploading}
+              onChange={handleUpload}
+              type="file"
+            />
+            {uploadError ? <span className="mt-1.5 block text-xs leading-5 text-rose-400">{uploadError}</span> : null}
+          </Field>
           {imageAssets.length === 0 ? (
-            <p className="sm:col-span-2 text-xs text-amber-400">ยังไม่มีรูปในคลังสื่อ — อัปโหลดได้ที่เมนู Media หรือใส่ URL โดยตรง</p>
+            <p className="sm:col-span-2 text-xs text-amber-400">ยังไม่มีรูปในคลังสื่อ — อัปโหลดได้ด้านบนหรือใส่ URL โดยตรง</p>
           ) : null}
         </div>
       </SettingsSection>

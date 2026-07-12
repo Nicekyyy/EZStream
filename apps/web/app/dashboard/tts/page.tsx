@@ -30,6 +30,12 @@ const statusTone: Record<TtsJob["status"], "warning" | "info" | "success" | "dan
   COMPLETED: "success",
   FAILED: "danger"
 };
+const statusLabel: Record<TtsJob["status"], string> = {
+  QUEUED: "รอคิว",
+  PROCESSING: "กำลังประมวลผล",
+  COMPLETED: "สำเร็จ",
+  FAILED: "ล้มเหลว"
+};
 
 function configObject(widget: TtsWidget | undefined) {
   return widget?.config && typeof widget.config === "object" && !Array.isArray(widget.config) ? (widget.config as Record<string, unknown>) : {};
@@ -68,7 +74,7 @@ export default function TtsPage() {
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [widgetId, setWidgetId] = useState("");
   const [voice, setVoice] = useState<GoogleTtsVoiceName>(defaultGoogleTtsVoiceName);
-  const [text, setText] = useState("Hello from dashboard");
+  const [text, setText] = useState("สวัสดีจากแดชบอร์ด");
   const [speed, setSpeed] = useState(1);
   const [pitch, setPitch] = useState(1);
   const [volume, setVolume] = useState(1);
@@ -287,7 +293,7 @@ export default function TtsPage() {
               ) : null}
             </Field>
 
-            <Field label="Voice">
+            <Field label="เสียง (Voice)">
               <Select id="tts-voice" value={voice} onChange={(event) => setVoice(resolveGoogleTtsVoiceName(event.target.value, defaultGoogleTtsVoiceName))}>
                 {googleTtsVoices.map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}
               </Select>
@@ -300,9 +306,9 @@ export default function TtsPage() {
             />
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <RangeField label="Speed" min="0.5" max="2" step="0.1" value={speed} onChange={setSpeed} />
-              <RangeField label="Pitch" min="0" max="2" step="0.1" value={pitch} onChange={setPitch} />
-              <RangeField label="Volume" min="0" max="1" step="0.1" value={volume} onChange={setVolume} />
+              <RangeField label="ความเร็ว (Speed)" min="0.5" max="2" step="0.1" value={speed} onChange={setSpeed} />
+              <RangeField label="ระดับเสียง (Pitch)" min="0" max="2" step="0.1" value={pitch} onChange={setPitch} />
+              <RangeField label="ความดัง (Volume)" min="0" max="1" step="0.1" value={volume} onChange={setVolume} />
             </div>
 
             <div className="border-t-2 border-border-base pt-6 mt-2 grid gap-6">
@@ -325,7 +331,7 @@ export default function TtsPage() {
 
             <div className="border-t-2 border-border-base pt-6 mt-2 grid gap-6">
               <h3 className="text-base font-semibold text-white">ทดสอบเสียง</h3>
-              <Field label="ข้อความทดสอบ" hint={`${text.length}/300 characters`}>
+              <Field label="ข้อความทดสอบ" hint={`${text.length}/300 ตัวอักษร`}>
                 <Textarea id="tts-text" className="min-h-20" maxLength={300} value={text} onChange={(event) => setText(event.target.value)} />
               </Field>
             </div>
@@ -353,13 +359,13 @@ export default function TtsPage() {
               <div className="min-w-0">
                 <p className="break-words font-medium text-white text-base">{job.text}</p>
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-bold text-ink-subtle">
-                  <p><span className="text-ink-faint mr-1.5">WIDGET</span> {job.widget?.name ?? "ไม่พบ widget"}</p>
-                  <p><span className="text-ink-faint mr-1.5">VOICE</span> {job.voice}</p>
-                  <p><span className="text-ink-faint mr-1.5">TIME</span> {new Date(job.createdAt).toLocaleString()}</p>
+                  <p><span className="text-ink-faint mr-1.5">วิดเจ็ต</span> {job.widget?.name ?? "ไม่พบ widget"}</p>
+                  <p><span className="text-ink-faint mr-1.5">เสียง</span> {job.voice}</p>
+                  <p><span className="text-ink-faint mr-1.5">เวลา</span> {new Date(job.createdAt).toLocaleString()}</p>
                 </div>
                 {job.errorMessage ? <p className="mt-3 text-sm font-medium text-rose-400">{job.errorMessage}</p> : null}
               </div>
-              <Badge tone={statusTone[job.status]}>{job.status}</Badge>
+              <Badge tone={statusTone[job.status]}>{statusLabel[job.status]}</Badge>
             </div>
           </ResourceCard>
         )) : <EmptyState title="ยังไม่มี TTS job" description="ส่งข้อความทดสอบเพื่อดูสถานะ job ล่าสุดที่นี่" />}

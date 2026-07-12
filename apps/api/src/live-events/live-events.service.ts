@@ -58,6 +58,15 @@ export class LiveEventsService {
       }
     });
 
+    await this.publishCreator(creatorId, "event.logged", {
+      id: updated.id,
+      eventType: updated.eventType,
+      payload: updated.payload,
+      status: updated.status,
+      matchedRuleIds,
+      createdAt: updated.createdAt
+    });
+
     return { ...updated, matchedRuleIds };
   }
 

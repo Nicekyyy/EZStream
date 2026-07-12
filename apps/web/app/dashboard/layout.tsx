@@ -6,11 +6,12 @@ import { EzstreamLogo } from "../../components/icons";
 
 const navItems = [
   ["/dashboard", "ภาพรวม"],
-  ["/dashboard/overlays", "Overlays"],
-  ["/dashboard/widgets", "Widgets"],
-  ["/dashboard/rules", "Rules"],
+  ["/dashboard/overlays", "โอเวอร์เลย์"],
+  ["/dashboard/widgets", "วิดเจ็ต"],
+  ["/dashboard/rules", "กฎการทำงาน"],
   ["/dashboard/tts", "TTS"],
-  ["/dashboard/chat", "Chat"],
+  ["/dashboard/chat", "แชท"],
+  ["/dashboard/events", "อีเวนต์"],
   ["/dashboard/settings", "ตั้งค่า"]
 ];
 
@@ -26,7 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <EzstreamLogo className="h-10 w-auto invert brightness-0" />
             </Link>
           </div>
-          <nav className="-mx-1 flex gap-2 overflow-x-auto pb-1 text-sm scrollbar-hide" aria-label="Dashboard navigation">
+          <nav className="-mx-1 flex gap-2 overflow-x-auto pb-1 text-sm scrollbar-hide" aria-label="เมนูนำทางแดชบอร์ด">
             {navItems.map(([href, label]) => {
               const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
               return (

@@ -30,6 +30,12 @@ const statusColor: Record<string, string> = {
   CONNECTED: "bg-emerald-500",
   ERROR: "bg-rose-500"
 };
+const statusLabel: Record<string, string> = {
+  DISCONNECTED: "ไม่ได้เชื่อมต่อ",
+  CONNECTING: "กำลังเชื่อมต่อ",
+  CONNECTED: "เชื่อมต่อแล้ว",
+  ERROR: "ผิดพลาด"
+};
 
 function PlatformIcon({ platform }: { platform: UnifiedChatMessage["platform"] }) {
   if (platform === "tiktok") return <TiktokIcon className="h-4 w-4 shrink-0 drop-shadow-sm" />;
@@ -106,7 +112,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     void load()
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load data"))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ"))
       .finally(() => setIsPageLoading(false));
   }, []);
 
@@ -252,7 +258,7 @@ export default function ChatPage() {
   }
 
   return (
-    <DashboardShell title="Chat Overlay">
+    <DashboardShell title="โอเวอร์เลย์แชท">
       {isPageLoading ? (
         <div className="flex min-h-[50vh] items-center justify-center rounded-xl border border-slate-800/50 bg-slate-900/20 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4">
@@ -286,7 +292,7 @@ export default function ChatPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-overlay">Overlay</label>
+                  <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-overlay">โอเวอร์เลย์</label>
                   <select
                     id="chat-overlay"
                     className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-white"
@@ -300,7 +306,7 @@ export default function ChatPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="chat-target">
-                  {platform === "TIKTOK" && "TikTok Username (เช่น @username)"}
+                  {platform === "TIKTOK" && "ชื่อผู้ใช้ TikTok (เช่น @username)"}
                   {platform === "YOUTUBE" && "YouTube Channel (ชื่อช่อง, @handle, URL หรือ Video ID)"}
                   {platform === "TWITCH" && "Twitch Channel (ชื่อช่อง)"}
                 </label>
@@ -346,7 +352,7 @@ export default function ChatPage() {
           </ResourceCard>
 
           {/* Sources List */}
-          <h2 className="text-lg font-semibold">Chat Sources ({sources.length})</h2>
+          <h2 className="text-lg font-semibold">Chat Source ทั้งหมด ({sources.length})</h2>
           <div className="grid gap-3">
             {sources.length ? sources.map((source) => (
               <ResourceCard key={source.id}>
@@ -355,11 +361,11 @@ export default function ChatPage() {
                     <div className="flex items-center gap-2">
                       <span className={`inline-block h-2.5 w-2.5 rounded-full ${statusColor[source.status]}`} />
                       <span className="text-sm font-medium">{platformLabel[source.platform]}</span>
-                      <span className="text-xs text-slate-400">{source.status}</span>
+                      <span className="text-xs text-slate-400">{statusLabel[source.status] ?? source.status}</span>
                     </div>
                     <p className="font-medium">{source.label || source.target}</p>
                     {source.label ? <p className="text-sm text-slate-400">{source.target}</p> : null}
-                    <p className="text-xs text-slate-500">Overlay: {source.overlay?.name ?? "-"}</p>
+                    <p className="text-xs text-slate-500">โอเวอร์เลย์: {source.overlay?.name ?? "-"}</p>
                     {source.errorMessage ? <p className="text-sm text-rose-400">{source.errorMessage}</p> : null}
                     {source.lastConnectedAt ? <p className="text-xs text-slate-500">เชื่อมต่อล่าสุด: {new Date(source.lastConnectedAt).toLocaleString()}</p> : null}
                   </div>
@@ -420,9 +426,9 @@ export default function ChatPage() {
           <ResourceCard>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Live Chat Preview</h2>
+                <h2 className="text-lg font-semibold">ตัวอย่างแชทสด</h2>
                 <button className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800" onClick={() => void sendMockChat()}>
-                  + Mock Chat
+                  + แชทจำลอง
                 </button>
               </div>
               <div className="relative h-96 overflow-hidden rounded-md border border-slate-800 bg-slate-950">

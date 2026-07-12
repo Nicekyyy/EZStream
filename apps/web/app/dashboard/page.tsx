@@ -17,6 +17,15 @@ type DashboardData = {
 };
 
 const mockEvents = ["chat", "gift", "follow", "like", "share", "join", "subscribe"];
+const mockEventLabels: Record<string, string> = {
+  chat: "แชท",
+  gift: "ของขวัญ",
+  follow: "ติดตาม",
+  like: "ไลก์",
+  share: "แชร์",
+  join: "เข้าห้อง",
+  subscribe: "สมัครสมาชิก"
+};
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData>();
@@ -57,9 +66,9 @@ export default function DashboardPage() {
     try {
       await api<{ eventType: string }>(`/mock-events/${type}`, {
         method: "POST",
-        body: JSON.stringify({ username: "tester", message: "Test Alert!" })
+        body: JSON.stringify({ username: "tester", message: "ทดสอบการแจ้งเตือน!" })
       });
-      setMessage(`[ TEST ${type.toUpperCase()} ] Fired successfully.`);
+      setMessage(`ยิงทดสอบ [ ${mockEventLabels[type] ?? type} ] สำเร็จแล้ว`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "ส่ง Mock Event ไม่สำเร็จ");
     } finally {
@@ -120,7 +129,7 @@ export default function DashboardPage() {
                       onClick={() => void sendMockEvent(event)}
                       className="group relative flex h-28 flex-col items-center justify-center overflow-hidden border-2 border-border-base bg-surface-dark text-center text-ink-base transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <span className="text-lg font-semibold capitalize">{busyType === event ? "กำลังส่ง..." : event}</span>
+                      <span className="text-lg font-semibold capitalize">{busyType === event ? "กำลังส่ง..." : mockEventLabels[event] ?? event}</span>
                       <span className="mt-2 text-[10px] font-semibold text-ink-faint">ALT + {index + 1}</span>
                     </button>
                   ))}
@@ -137,7 +146,7 @@ export default function DashboardPage() {
                 <div key={overlay.id} className="flex flex-col justify-between border-2 border-border-base bg-surface-card p-5">
                   <div className="flex items-start justify-between gap-4">
                     <p className="truncate font-semibold text-ink-base">{overlay.name}</p>
-                    <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "ON" : "OFF"}</Badge>
+                    <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
                   </div>
                   <div className="mt-6 flex gap-2">
                     <Button

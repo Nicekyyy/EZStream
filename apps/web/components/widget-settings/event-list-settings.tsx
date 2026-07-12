@@ -25,7 +25,7 @@ export function eventListSettingsFromConfig(config: Record<string, unknown>): Ev
   return {
     maxItems: configNumber(config, "maxItems", 8),
     showHeader: configBool(config, "showHeader", true),
-    headerText: configString(config, "headerText", "Recent Events"),
+    headerText: configString(config, "headerText", "กิจกรรมล่าสุด"),
     accentColor: configString(config, "accentColor", "#E5FC52"),
     itemBackgroundColor: configString(config, "itemBackgroundColor", "#0F0F13"),
     itemBackgroundOpacity: configNumber(config, "itemBackgroundOpacity", 0.4),

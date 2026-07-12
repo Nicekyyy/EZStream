@@ -14,7 +14,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (
     : ""
 );
 
-function getToken() {
+export function getToken() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("ezstream_token");
 }
@@ -36,7 +36,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    throw new Error(text || `คำขอไม่สำเร็จ (${response.status})`);
   }
   return (await response.json()) as T;
 }

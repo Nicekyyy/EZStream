@@ -676,20 +676,20 @@ export function ChatWidgetSettings({
                 <Field label="Animation ขาเข้า">
                   <Select disabled={busy} value={draft.animationType} onChange={(event) => setValue("animationType", event.target.value)}>
                     <option value="none">ไม่มี</option>
-                    <option value="fade">Fade in</option>
-                    <option value="slide-up">Slide Up</option>
-                    <option value="slide-left">Slide Left</option>
-                    <option value="slide-right">Slide Right</option>
+                    <option value="fade">ค่อยๆ ปรากฏ (Fade in)</option>
+                    <option value="slide-up">เลื่อนขึ้น (Slide Up)</option>
+                    <option value="slide-left">เลื่อนซ้าย (Slide Left)</option>
+                    <option value="slide-right">เลื่อนขวา (Slide Right)</option>
                     <option value="pop">Pop (เด้ง)</option>
                   </Select>
                 </Field>
                 <Field label="Animation ขาออก">
                   <Select disabled={busy} value={draft.exitAnimationType} onChange={(event) => setValue("exitAnimationType", event.target.value)}>
                     <option value="none">ไม่มี</option>
-                    <option value="fade">Fade out</option>
-                    <option value="slide-up">Slide Up</option>
-                    <option value="slide-left">Slide Left</option>
-                    <option value="slide-right">Slide Right</option>
+                    <option value="fade">ค่อยๆ จางหาย (Fade out)</option>
+                    <option value="slide-up">เลื่อนขึ้น (Slide Up)</option>
+                    <option value="slide-left">เลื่อนซ้าย (Slide Left)</option>
+                    <option value="slide-right">เลื่อนขวา (Slide Right)</option>
                     <option value="pop">Pop (หด)</option>
                   </Select>
                 </Field>

@@ -25,7 +25,7 @@ export type GoalSettingsDraft = {
 
 export function goalSettingsFromConfig(config: Record<string, unknown>): GoalSettingsDraft {
   return {
-    label: configString(config, "label", "Goal"),
+    label: configString(config, "label", "เป้าหมาย"),
     target: configNumber(config, "target", 100),
     showValues: configBool(config, "showValues", true),
     showPercent: configBool(config, "showPercent", false),

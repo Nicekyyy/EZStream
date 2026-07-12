@@ -100,7 +100,7 @@ export default function OverlaysPage() {
   }
 
   return (
-    <DashboardShell title="Overlays">
+    <DashboardShell title="โอเวอร์เลย์">
       <PageActions>
         <p className="max-w-2xl text-sm leading-6 text-slate-400">สร้าง URL สำหรับ OBS หรือ TikTok LIVE Studio และจัดการสถานะของแต่ละ overlay</p>
       </PageActions>
@@ -135,7 +135,7 @@ export default function OverlaysPage() {
                   <Badge tone={overlay.isActive ? "success" : "neutral"}>{overlay.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}</Badge>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-ink-subtle">
-                  <p><span className="text-ink-faint mr-1">SIZE</span> {overlay.width}x{overlay.height}</p>
+                  <p><span className="text-ink-faint mr-1">ขนาด</span> {overlay.width}x{overlay.height}</p>
                   <p><span className="text-ink-faint mr-1">URL</span> {APP_URL}/overlay?token={overlay.token}</p>
                 </div>
               </div>

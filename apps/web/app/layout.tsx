@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "EZStream",
-  description: "Live Stream Widget, Real-time Overlay และ TTS Automation"
+  description: "วิดเจ็ตสำหรับไลฟ์สตรีม โอเวอร์เลย์แบบเรียลไทม์ และระบบอ่านข้อความอัตโนมัติ (TTS)"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

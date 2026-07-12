@@ -189,7 +189,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
           const msgText = this.tiktokMessageText(data);
           if (!msgText) return;
           const message: UnifiedChatMessage = {
-            id: `tiktok-${data.msgId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
+            id: `tiktok-${data.common?.msgId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`}`,
             platform: "tiktok",
             username: data.user?.uniqueId ?? "unknown",
             displayName: data.user?.nickname ?? data.user?.uniqueId ?? "unknown",

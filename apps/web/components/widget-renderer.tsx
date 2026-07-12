@@ -311,7 +311,7 @@ function AlertWidget({ widget }: { widget: OverlayWidget }) {
           style={{ background: backgroundColor, borderLeft: `4px solid ${accentColor}`, borderRadius, fontFamily }}
         >
           <div>
-            {showLabel ? <p className="mb-1 text-xs font-semibold text-ink-subtle">Alert</p> : null}
+            {showLabel ? <p className="mb-1 text-xs font-semibold text-ink-subtle">แจ้งเตือน</p> : null}
             <p className="leading-tight" style={{ color: textColor, fontSize, fontWeight, textShadow }}>{message}</p>
           </div>
         </motion.div>
@@ -342,7 +342,7 @@ function GoalWidget({ widget }: { widget: OverlayWidget }) {
   return (
     <div className="flex h-full flex-col justify-center p-5" style={{ background: backgroundColor, borderRadius, fontFamily }}>
       <div className="mb-3 flex justify-between" style={{ color: textColor, fontSize, fontWeight }}>
-        <span>{text(config.label, "Goal")}</span>
+        <span>{text(config.label, "เป้าหมาย")}</span>
         {showValues ? (
           <span style={{ color: barColor }}>
             {current}/{target}
@@ -373,7 +373,7 @@ function EventListWidget({ widget }: { widget: OverlayWidget }) {
 
   return (
     <div className="h-full space-y-3 overflow-hidden p-4" style={{ background: backgroundColor, fontFamily }}>
-      {showHeader ? <p className="mb-2 text-xs font-semibold text-ink-subtle">{text(config.headerText, "Recent Events")}</p> : null}
+      {showHeader ? <p className="mb-2 text-xs font-semibold text-ink-subtle">{text(config.headerText, "กิจกรรมล่าสุด")}</p> : null}
       {items.map((item, index) => {
         const renderedText = item && typeof item === "object" ? text((item as Record<string, unknown>).renderedText) : "";
         return (
@@ -835,7 +835,7 @@ function ImageWidget({ widget }: { widget: OverlayWidget }) {
 
   const withinDuration = triggeredAt > 0 && durationMs > 0 && now - triggeredAt < durationMs;
   const visible = showMode === "triggered" ? withinDuration : !durationMs || !triggeredAt || now - triggeredAt < durationMs;
-  if (!src || !visible) return src ? <div className="h-full" /> : <StatusWidget label="Image" value="ยังไม่มีรูป" />;
+  if (!src || !visible) return src ? <div className="h-full" /> : <StatusWidget label="รูปภาพ" value="ยังไม่มีรูป" />;
 
   return <img src={src} alt={widget.name} className="h-full w-full" style={{ objectFit: fit, opacity, borderRadius }} />;
 }
