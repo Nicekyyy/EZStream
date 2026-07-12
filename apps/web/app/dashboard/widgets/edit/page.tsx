@@ -550,9 +550,11 @@ function WidgetDetailContent() {
 
           <ResourceCard>
             <p className="text-base font-semibold text-white">Widget URL สำหรับโปรแกรมสตรีม (เช่น OBS)</p>
-            <p className="mt-1 text-xs font-medium text-amber-400">
-              💡 แนะนำ: กรุณาตั้งค่าความกว้าง (Width) และความสูง (Height) ใน OBS ให้ตรงกับที่ตั้งไว้ในข้อมูลหลัก
-            </p>
+            {widget && isAudioOnlyWidgetType(widget.type) ? null : (
+              <p className="mt-1 text-xs font-medium text-amber-400">
+                💡 แนะนำ: กรุณาตั้งค่าความกว้าง (Width) และความสูง (Height) ใน OBS ให้ตรงกับที่ตั้งไว้ในข้อมูลหลัก
+              </p>
+            )}
             <p className="mt-2 break-all rounded-none border-2 border-border-base bg-surface-base px-4 py-3 text-sm text-ink-subtle">{widgetUrl || "กำลังโหลด URL"}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
