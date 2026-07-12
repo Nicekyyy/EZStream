@@ -22,6 +22,9 @@ import { alertSettingsFromConfig, AlertWidgetSettings, type AlertSettingsDraft }
 import { goalSettingsFromConfig, GoalWidgetSettings, type GoalSettingsDraft } from "../../../../components/widget-settings/goal-settings";
 import { eventListSettingsFromConfig, EventListWidgetSettings, type EventListSettingsDraft } from "../../../../components/widget-settings/event-list-settings";
 import { textSettingsFromConfig, TextWidgetSettings, type TextSettingsDraft } from "../../../../components/widget-settings/text-settings";
+import { imageSettingsFromConfig, ImageWidgetSettings, type ImageSettingsDraft, type MediaAssetOption } from "../../../../components/widget-settings/image-settings";
+import { soundSettingsFromConfig, SoundWidgetSettings, type SoundSettingsDraft } from "../../../../components/widget-settings/sound-settings";
+import { ttsSettingsFromConfig, TtsWidgetSettings, type TtsSettingsDraft } from "../../../../components/widget-settings/tts-settings";
 
 type Overlay = { id: string; name: string; token: string; width: number; height: number };
 type EventLog = { id: string; eventType: string; payload: unknown; createdAt: string };
@@ -65,6 +68,12 @@ function draftFromWidget(widget: Widget): Record<string, unknown> | null {
       return eventListSettingsFromConfig(config);
     case "TEXT_WIDGET":
       return textSettingsFromConfig(config);
+    case "IMAGE_WIDGET":
+      return imageSettingsFromConfig(config);
+    case "SOUND_WIDGET":
+      return soundSettingsFromConfig(config);
+    case "TTS_WIDGET":
+      return ttsSettingsFromConfig(config);
     default:
       return null;
   }
@@ -156,6 +165,7 @@ function WidgetDetailContent() {
   const router = useRouter();
   const [widget, setWidget] = useState<Widget>();
   const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [mediaAssets, setMediaAssets] = useState<MediaAssetOption[]>([]);
   const [draftName, setDraftName] = useState("");
   const [draftOverlayId, setDraftOverlayId] = useState("");
   const [positionX, setPositionX] = useState<number | "">(0);
@@ -278,9 +288,14 @@ function WidgetDetailContent() {
   async function load() {
     try {
       setError("");
-      const [nextWidget, nextOverlays] = await Promise.all([api<Widget>(`/widgets/${widgetId}`), api<Overlay[]>("/overlays")]);
+      const [nextWidget, nextOverlays, nextMedia] = await Promise.all([
+        api<Widget>(`/widgets/${widgetId}`),
+        api<Overlay[]>("/overlays"),
+        api<MediaAssetOption[]>("/media").catch(() => [] as MediaAssetOption[])
+      ]);
       syncDraft(nextWidget);
       setOverlays(nextOverlays);
+      setMediaAssets(nextMedia);
     } catch (err) {
       setError(err instanceof Error ? err.message : "โหลด Widget ไม่สำเร็จ");
     }
@@ -511,6 +526,18 @@ function WidgetDetailContent() {
 
           {widget && configDraft && widget.type === "TEXT_WIDGET" ? (
             <TextWidgetSettings busy={busy} draft={configDraft as TextSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "IMAGE_WIDGET" ? (
+            <ImageWidgetSettings busy={busy} draft={configDraft as ImageSettingsDraft} isDirty={isConfigDirty} mediaAssets={mediaAssets} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "SOUND_WIDGET" ? (
+            <SoundWidgetSettings busy={busy} draft={configDraft as SoundSettingsDraft} isDirty={isConfigDirty} mediaAssets={mediaAssets} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "TTS_WIDGET" ? (
+            <TtsWidgetSettings busy={busy} draft={configDraft as TtsSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
           ) : null}
 
           <ResourceCard>
