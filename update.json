@@ -1,11 +1,11 @@
 {
-  "version": "1.1.1",
-  "notes": "ปรับปรุงระบบเข้าสู่ระบบอัตโนมัติ (ลบหน้า login/register) และแก้ไขบั๊ก (v1.1.1)",
+  "version": "1.1.2",
+  "notes": "ปรับปรุงระบบเข้าสู่ระบบอัตโนมัติ (ลบหน้า login/register) และแก้ไขบั๊ก (v1.1.2)",
   "pub_date": "2026-07-13T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "REPLACE_WITH_SIGNATURE_FROM_GITHUB_RELEASE",
-      "url": "https://github.com/Nicekyyy/EZStream/releases/download/v1.1.1/EZStream_1.1.1_x64_en-US.msi.zip"
+      "url": "https://github.com/Nicekyyy/EZStream/releases/download/v1.1.2/ezstream_1.1.2_x64-setup.exe"
     }
   }
 }
