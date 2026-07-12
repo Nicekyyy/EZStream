@@ -46,6 +46,18 @@ function configObject(widget: Widget | undefined) {
     : {};
 }
 
+function draftFromWidget(widget: Widget): Record<string, unknown> | null {
+  const config = configObject(widget);
+  switch (widget.type) {
+    case "CHAT_WIDGET":
+      return chatSettingsFromConfig(config);
+    case "VIEWER_COUNT_WIDGET":
+      return viewerCountSettingsFromConfig(config);
+    default:
+      return null;
+  }
+}
+
 
 function objectValue(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -139,8 +151,7 @@ function WidgetDetailContent() {
   const [width, setWidth] = useState<number | "">(400);
   const [height, setHeight] = useState<number | "">(160);
   const [zIndex, setZIndex] = useState<number | "">(1);
-  const [chatDraft, setChatDraft] = useState<ChatSettingsDraft>(() => chatSettingsFromConfig({}));
-  const [viewerCountDraft, setViewerCountDraft] = useState<Record<string, any>>(() => viewerCountSettingsFromConfig({}));
+  const [configDraft, setConfigDraft] = useState<Record<string, unknown> | null>(null);
   const [chatPreviewMessages, setChatPreviewMessages] = useState<PreviewChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -152,13 +163,8 @@ function WidgetDetailContent() {
   const widgetConfig = configObject(widget);
   const widgetUrl = widget && APP_URL ? `${APP_URL}/widget?id=${widget.id}` : "";
   const isChatWidget = widget?.type === "CHAT_WIDGET";
-  const isViewerCountWidget = widget?.type === "VIEWER_COUNT_WIDGET";
   const selectedOverlay = overlays.find((overlay) => overlay.id === draftOverlayId);
-  const previewConfig = isChatWidget 
-    ? { ...widgetConfig, ...chatDraft } 
-    : isViewerCountWidget 
-      ? { ...widgetConfig, ...viewerCountDraft } 
-      : widgetConfig;
+  const previewConfig = configDraft ? { ...widgetConfig, ...configDraft } : widgetConfig;
 
   const previewWidget = useMemo<OverlayWidget | null>(() => {
     if (!widget) return null;
@@ -196,19 +202,13 @@ function WidgetDetailContent() {
     return false;
   }, [widget, draftName, draftOverlayId, positionX, positionY, width, height, zIndex]);
 
-  const isChatDirty = useMemo(() => {
-    if (!widget || !isChatWidget) return false;
-    const originalChatSettings = chatSettingsFromConfig(configObject(widget));
-    return JSON.stringify(chatDraft) !== JSON.stringify(originalChatSettings);
-  }, [widget, chatDraft, isChatWidget]);
+  const isConfigDirty = useMemo(() => {
+    if (!widget || !configDraft) return false;
+    const original = draftFromWidget(widget);
+    return original ? JSON.stringify(configDraft) !== JSON.stringify(original) : false;
+  }, [widget, configDraft]);
 
-  const isViewerCountDirty = useMemo(() => {
-    if (!widget || !isViewerCountWidget) return false;
-    const originalSettings = viewerCountSettingsFromConfig(configObject(widget));
-    return JSON.stringify(viewerCountDraft) !== JSON.stringify(originalSettings);
-  }, [widget, viewerCountDraft, isViewerCountWidget]);
-
-  const isDirty = isCoreDirty || isChatDirty || isViewerCountDirty;
+  const isDirty = isCoreDirty || isConfigDirty;
 
   const handleSaveAndLeave = async () => {
     let updates: any = {};
@@ -228,10 +228,8 @@ function WidgetDetailContent() {
         zIndex: Number(zIndex) || 1
       };
     }
-    if (isChatDirty) {
-      updates.config = { ...widgetConfig, ...chatDraft };
-    } else if (isViewerCountDirty) {
-      updates.config = { ...widgetConfig, ...viewerCountDraft };
+    if (isConfigDirty && configDraft) {
+      updates.config = { ...widgetConfig, ...configDraft };
     }
     
     if (Object.keys(updates).length > 0) {
@@ -262,11 +260,7 @@ function WidgetDetailContent() {
     setWidth(nextWidget.width);
     setHeight(nextWidget.height);
     setZIndex(nextWidget.zIndex);
-    if (nextWidget.type === "CHAT_WIDGET") {
-      setChatDraft(chatSettingsFromConfig(configObject(nextWidget)));
-    } else if (nextWidget.type === "VIEWER_COUNT_WIDGET") {
-      setViewerCountDraft(viewerCountSettingsFromConfig(configObject(nextWidget)));
-    }
+    setConfigDraft(draftFromWidget(nextWidget));
   }
 
   async function load() {
@@ -359,12 +353,9 @@ function WidgetDetailContent() {
     }, "บันทึกข้อมูล Widget แล้ว");
   }
 
-  async function saveChatSettings() {
-    await updateWidget({ config: { ...widgetConfig, ...chatDraft } }, "บันทึกการตั้งค่า Chat แล้ว");
-  }
-
-  async function saveViewerCountSettings() {
-    await updateWidget({ config: { ...widgetConfig, ...viewerCountDraft } }, "บันทึกการตั้งค่า Viewer Count แล้ว");
+  async function saveConfigSettings() {
+    if (!configDraft) return;
+    await updateWidget({ config: { ...widgetConfig, ...configDraft } }, "บันทึกการตั้งค่า Widget แล้ว");
   }
 
   async function testTrigger() {
@@ -479,12 +470,19 @@ function WidgetDetailContent() {
             </form>
           </ResourceCard>
 
-          {isChatWidget ? (
-            <ChatWidgetSettings busy={busy} draft={chatDraft} isDirty={isChatDirty} onDraftChange={setChatDraft} onReset={() => setChatDraft(chatSettingsFromConfig({}))} onSave={saveChatSettings} />
+          {widget && configDraft && widget.type === "CHAT_WIDGET" ? (
+            <ChatWidgetSettings
+              busy={busy}
+              draft={configDraft as ChatSettingsDraft}
+              isDirty={isConfigDirty}
+              onDraftChange={setConfigDraft}
+              onReset={() => setConfigDraft(chatSettingsFromConfig({}))}
+              onSave={saveConfigSettings}
+            />
           ) : null}
 
-          {isViewerCountWidget ? (
-            <ViewerCountWidgetSettings busy={busy} draft={viewerCountDraft} isDirty={isViewerCountDirty} onDraftChange={setViewerCountDraft} onSave={saveViewerCountSettings} />
+          {widget && configDraft && widget.type === "VIEWER_COUNT_WIDGET" ? (
+            <ViewerCountWidgetSettings busy={busy} draft={configDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
           ) : null}
 
           <ResourceCard>
