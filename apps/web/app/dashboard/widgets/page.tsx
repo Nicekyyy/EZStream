@@ -139,9 +139,11 @@ export default function WidgetsPage() {
                 <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-ink-subtle">
                   <p><span className="text-ink-faint mr-1">ประเภท</span> {widget.type}</p>
                   <p><span className="text-ink-faint mr-1">โอเวอร์เลย์</span> {widget.overlay?.name ?? "ยังไม่ผูก"}</p>
-                  <p><span className="text-ink-faint mr-1">ตำแหน่ง</span> X {widget.positionX}, Y {widget.positionY}</p>
                   {isAudioOnlyWidgetType(widget.type) ? null : (
-                    <p><span className="text-ink-faint mr-1">ขนาด</span> {widget.width}x{widget.height}</p>
+                    <>
+                      <p><span className="text-ink-faint mr-1">ตำแหน่ง</span> X {widget.positionX}, Y {widget.positionY}</p>
+                      <p><span className="text-ink-faint mr-1">ขนาด</span> {widget.width}x{widget.height}</p>
+                    </>
                   )}
                 </div>
               </div>
