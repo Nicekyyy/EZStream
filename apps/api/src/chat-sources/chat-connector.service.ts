@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { defaultGoogleTtsVoiceName, resolveGoogleTtsVoiceName, sanitizeTtsText, CHAT_COMMANDS_CHANNEL, REALTIME_CHANNEL } from "@ezstream/shared";
 import type { UnifiedChatMessage } from "@ezstream/shared";
-import { Prisma, TtsJobStatus, WidgetActionStatus } from "@prisma/client";
+import { Prisma, TtsJobStatus, WidgetActionStatus, type ChatSource, type Overlay } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { REDIS } from "../redis/redis.module.js";
 import { QueuesService } from "../queues/queues.service.js";
@@ -18,6 +18,10 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   private googleTtsVoice!: string;
   private reconnectInterval: NodeJS.Timeout | null = null;
   private twitchGlobalBadges: any[] = [];
+  // Chat messages arrive many times per second; don't hit SQLite for the same
+  // chat source on every one of them.
+  private chatSourceCache = new Map<string, { source: (ChatSource & { overlay: Overlay }) | null; expiresAt: number }>();
+  private readonly chatSourceCacheTtlMs = 5000;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -526,7 +530,9 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       }, 30000);
 
       // Keep polling YouTube chat
-      void livechat.start();
+      Promise.resolve(livechat.start()).catch((error: any) => {
+        console.error(`[chat] YouTube livechat.start() failed: ${error?.message ?? error}`);
+      });
       console.log(`[chat] YouTube: livechat.start() called`);
 
       this.activeChats.set(chatSourceId, {
@@ -651,7 +657,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       await client.connect();
 
       if (!this.isActiveChatConnection(chatSourceId, attempt.connectionId)) {
-        void client.disconnect();
+        Promise.resolve(client.disconnect()).catch(() => undefined);
         return;
       }
 
@@ -685,9 +691,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
           run = false;
           if (viewerInterval) clearInterval(viewerInterval);
           console.log(`[chat] Twitch: disconnect requested for source=${chatSourceId}`);
-          try {
-            void client.disconnect();
-          } catch (e) { }
+          await Promise.resolve(client.disconnect()).catch(() => undefined);
           void this.updateViewerCount(chatSourceId, overlayToken, 0);
         }
       });
@@ -703,15 +707,31 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
 
   // ─── Rules and Messages Execution ──────────────────────────────────────────
 
-  private async processTikTokEvent(chatSourceId: string, overlayToken: string, eventType: string, payload: Record<string, unknown>) {
-    const source = await this.prisma.chatSource.findUnique({ where: { id: chatSourceId } });
-    if (!source) return;
-    await this.liveEvents.processEvent(source.creatorId, eventType, {
-      ...payload,
-      platform: "tiktok",
-      overlayId: source.overlayId,
-      overlayToken
+  private async getChatSource(chatSourceId: string) {
+    const cached = this.chatSourceCache.get(chatSourceId);
+    if (cached && cached.expiresAt > Date.now()) return cached.source;
+    const source = await this.prisma.chatSource.findUnique({
+      where: { id: chatSourceId },
+      include: { overlay: true }
     });
+    this.chatSourceCache.set(chatSourceId, { source, expiresAt: Date.now() + this.chatSourceCacheTtlMs });
+    return source;
+  }
+
+  private async processTikTokEvent(chatSourceId: string, overlayToken: string, eventType: string, payload: Record<string, unknown>) {
+    // Callers fire-and-forget this; an uncaught rejection here would take the process down.
+    try {
+      const source = await this.getChatSource(chatSourceId);
+      if (!source) return;
+      await this.liveEvents.processEvent(source.creatorId, eventType, {
+        ...payload,
+        platform: "tiktok",
+        overlayId: source.overlayId,
+        overlayToken
+      });
+    } catch (error) {
+      console.error(`[chat] Error processing TikTok event ${eventType}: ${error}`);
+    }
   }
 
   private async publishChatMessage(chatSourceId: string, overlayToken: string, message: UnifiedChatMessage) {
@@ -732,10 +752,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
         })
       );
 
-      const source = await this.prisma.chatSource.findUnique({
-        where: { id: chatSourceId },
-        include: { overlay: true }
-      });
+      const source = await this.getChatSource(chatSourceId);
       if (!source || !source.isEnabled || !source.overlay.isActive) return;
 
       const payload = {

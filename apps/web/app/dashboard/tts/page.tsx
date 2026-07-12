@@ -9,7 +9,7 @@ import Link from "next/link";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
 import { Badge, EmptyState, Field, Input, LoadingCards, Notice, PageActions, Select, Textarea } from "../../../components/ui-kit";
-import { API_URL, api } from "../../../lib/api";
+import { API_URL, api, resolveAssetUrl } from "../../../lib/api";
 
 type Overlay = { id: string; name: string; token: string };
 type TtsWidget = { id: string; name: string; type: string; overlayId: string | null; isEnabled: boolean; visibility?: boolean; config?: unknown };
@@ -93,7 +93,7 @@ export default function TtsPage() {
     if (!next) return;
 
     if (next.audioUrl) {
-      const audio = new Audio(next.audioUrl);
+      const audio = new Audio(resolveAssetUrl(next.audioUrl));
       currentAudio.current = audio;
       audio.volume = next.volume;
       const finish = () => {

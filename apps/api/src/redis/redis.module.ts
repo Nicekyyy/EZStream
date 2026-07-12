@@ -5,6 +5,7 @@ export const REDIS = Symbol("REDIS");
 
 class MockRedis extends EventEmitter {
   private static globalBus = new EventEmitter();
+  private subscriptions = new Map<string, (message: string) => void>();
 
   constructor() {
     super();
@@ -22,16 +23,29 @@ class MockRedis extends EventEmitter {
   }
 
   async subscribe(channel: string): Promise<void> {
-    MockRedis.globalBus.on(channel, (message: string) => {
+    if (this.subscriptions.has(channel)) return;
+    const handler = (message: string) => {
       this.emit("message", channel, message);
-    });
+    };
+    this.subscriptions.set(channel, handler);
+    MockRedis.globalBus.on(channel, handler);
+  }
+
+  private removeSubscriptions() {
+    for (const [channel, handler] of this.subscriptions) {
+      MockRedis.globalBus.off(channel, handler);
+    }
+    this.subscriptions.clear();
   }
 
   async quit(): Promise<string> {
+    this.removeSubscriptions();
     return "OK";
   }
 
-  async disconnect(): Promise<void> {}
+  async disconnect(): Promise<void> {
+    this.removeSubscriptions();
+  }
 }
 
 @Global()

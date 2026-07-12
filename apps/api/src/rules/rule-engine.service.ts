@@ -28,6 +28,8 @@ function isWithinActiveWindow(activeFrom: string | null, activeTo: string | null
   const [toH, toM] = activeTo.split(":").map(Number);
   const from = fromH * 60 + fromM;
   const to = toH * 60 + toM;
+  // Malformed times would make every comparison NaN and silently disable the rule.
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return true;
   if (from === to) return true;
   if (from < to) return minutes >= from && minutes < to;
   return minutes >= from || minutes < to;
@@ -130,6 +132,14 @@ export class RuleEngineService {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const [key, timestamp] of this.cooldowns) {
       if (timestamp < cutoff) this.cooldowns.delete(key);
+    }
+    // Age-based pruning is a no-op when every entry is recent (busy chat with
+    // per-user cooldowns) — evict oldest-inserted entries to keep the map bounded.
+    let toEvict = this.cooldowns.size - Math.floor(this.maxCooldownEntries / 2);
+    if (toEvict <= 0) return;
+    for (const key of this.cooldowns.keys()) {
+      if (toEvict-- <= 0) break;
+      this.cooldowns.delete(key);
     }
   }
 

@@ -5,8 +5,8 @@ import { Prisma, TtsJobStatus, WidgetActionStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { REDIS } from "../redis/redis.module.js";
 import { createSign } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { EventEmitter } from "node:events";
 
 class InMemoryQueue extends EventEmitter {
@@ -14,13 +14,24 @@ class InMemoryQueue extends EventEmitter {
   private processing = false;
   private processor?: (job: { id: string; name: string; data: any }) => Promise<void>;
 
-  constructor(public name: string) {
+  constructor(
+    public name: string,
+    private readonly maxSize = 1000
+  ) {
     super();
   }
 
   async add(name: string, data: any): Promise<{ id: string; name: string; data: any }> {
     const job = { id: Math.random().toString(36).substring(7), name, data };
     this.queue.push(job);
+    // Shed the oldest job when full so a chat burst can't grow memory unboundedly.
+    if (this.queue.length > this.maxSize) {
+      const dropped = this.queue.shift();
+      if (dropped) {
+        console.warn(`[queues] ${this.name} queue full (${this.maxSize}); dropping oldest job ${dropped.id}`);
+        this.emit("dropped", dropped);
+      }
+    }
     void this.processNext();
     return job;
   }
@@ -53,9 +64,10 @@ class InMemoryQueue extends EventEmitter {
 
 @Injectable()
 export class QueuesService implements OnModuleInit, OnModuleDestroy {
-  readonly liveEvents = new InMemoryQueue("live-events");
-  readonly widgetActions = new InMemoryQueue("widget-actions");
-  readonly ttsJobs = new InMemoryQueue("tts-jobs");
+  readonly liveEvents = new InMemoryQueue("live-events", 1000);
+  readonly widgetActions = new InMemoryQueue("widget-actions", 500);
+  // TTS is the slowest consumer (Google API call + per-creator cooldown), keep it tight.
+  readonly ttsJobs = new InMemoryQueue("tts-jobs", 200);
 
   private readonly lastTtsByCreator = new Map<string, number>();
   private googleAccessToken?: { token: string; expiresAt: number };
@@ -96,6 +108,20 @@ export class QueuesService implements OnModuleInit, OnModuleDestroy {
         }).catch(() => undefined);
         throw error;
       }
+    });
+
+    // Jobs shed by the bounded queues would otherwise stay QUEUED in the DB forever.
+    this.widgetActions.on("dropped", (job: { data: { widgetActionId?: unknown } }) => {
+      void this.prisma.widgetAction.update({
+        where: { id: String(job.data.widgetActionId) },
+        data: { status: WidgetActionStatus.FAILED, errorMessage: "Dropped: widget action queue overloaded" }
+      }).catch(() => undefined);
+    });
+    this.ttsJobs.on("dropped", (job: { data: { ttsJobId?: unknown } }) => {
+      void this.prisma.ttsJob.update({
+        where: { id: String(job.data.ttsJobId) },
+        data: { status: TtsJobStatus.FAILED, errorMessage: "Dropped: TTS queue overloaded" }
+      }).catch(() => undefined);
     });
   }
 
@@ -222,12 +248,21 @@ export class QueuesService implements OnModuleInit, OnModuleDestroy {
     }
 
     const audio = await this.synthesizeGoogleTts({ text, voice: job.voice, speed: job.speed, pitch: job.pitch, creatorSettings: job.creator.settings });
+    // Store the MP3 on disk and publish a small URL — keeping megabytes of
+    // base64 in the DB payload bloats SQLite quickly on busy streams.
+    let audioUrl: string;
+    try {
+      audioUrl = await this.storeTtsAudio(ttsJobId, audio.audioContent);
+    } catch (error) {
+      console.warn(`[queues] Failed to write TTS audio file, falling back to data URI:`, error);
+      audioUrl = `data:audio/mpeg;base64,${audio.audioContent}`;
+    }
     const payload = {
       type: "tts.audio",
       ttsJobId,
       text,
       provider: "google-cloud",
-      audioUrl: audio.audioUrl,
+      audioUrl,
       mimeType: "audio/mpeg",
       voice: audio.voiceName,
       speed: job.speed,
@@ -396,8 +431,17 @@ export class QueuesService implements OnModuleInit, OnModuleDestroy {
     }
 
     return {
-      audioUrl: `data:audio/mpeg;base64,${body.audioContent}`,
+      audioContent: body.audioContent,
       voiceName
     };
+  }
+
+  private async storeTtsAudio(ttsJobId: string, base64Audio: string): Promise<string> {
+    const storageRoot = resolve(this.config.get<string>("LOCAL_STORAGE_ROOT", "./storage"));
+    const dir = join(storageRoot, "tts");
+    await mkdir(dir, { recursive: true });
+    const fileName = `${ttsJobId}.mp3`;
+    await writeFile(join(dir, fileName), Buffer.from(base64Audio, "base64"));
+    return `/storage/tts/${fileName}`;
   }
 }

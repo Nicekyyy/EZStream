@@ -13,7 +13,30 @@ export class LiveEventsService {
     @Inject(REDIS) private readonly redis: Redis
   ) {}
 
+  // SQLite allows one writer at a time — process events sequentially so a chat
+  // burst queues up instead of exhausting the connection pool with lock errors.
+  private static readonly maxPending = 1000;
+  private pending = 0;
+  private tail: Promise<unknown> = Promise.resolve();
+
   async processEvent(creatorId: string, eventType: string, payload: Record<string, unknown>) {
+    if (this.pending >= LiveEventsService.maxPending) {
+      throw new Error(`Live event queue is full (${LiveEventsService.maxPending} pending) — event dropped to stay responsive`);
+    }
+    this.pending++;
+    const result = this.tail.then(() => this.handleEvent(creatorId, eventType, payload));
+    this.tail = result.then(
+      () => {
+        this.pending--;
+      },
+      () => {
+        this.pending--;
+      }
+    );
+    return result;
+  }
+
+  private async handleEvent(creatorId: string, eventType: string, payload: Record<string, unknown>) {
     const eventLog = await this.prisma.eventLog.create({
       data: {
         creatorId,

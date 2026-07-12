@@ -9,6 +9,15 @@ import { AppModule } from "./app.module.js";
 import { HttpErrorFilter } from "./common/http-error.filter.js";
 import { isOriginAllowed } from "./common/cors.js";
 
+// Keep the process alive when a stray promise rejects (e.g. a chat connector
+// callback failing mid-stream) — log loudly instead of crashing the overlay.
+process.on("unhandledRejection", (reason) => {
+  console.error("[api] Unhandled promise rejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("[api] Uncaught exception:", error);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);

@@ -39,7 +39,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayDisconnect, OnMo
 
   @SubscribeMessage("overlay.join")
   async joinOverlay(@ConnectedSocket() socket: Socket, @MessageBody() body: { token?: string; overlayId?: string; widgetId?: string }) {
-    if (body.token) {
+    if (!body || typeof body !== "object") return { joined: false };
+    if (typeof body.token === "string" && body.token) {
       const overlay = await this.prisma.overlay.findUnique({ where: { token: body.token } });
       if (!overlay || !overlay.isActive) {
         return { joined: false };

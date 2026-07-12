@@ -17,6 +17,7 @@ import { QueuesModule } from "./queues/queues.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
 import { RedisModule } from "./redis/redis.module.js";
 import { LiveEventsModule } from "./live-events/live-events.module.js";
+import { MaintenanceModule } from "./maintenance/maintenance.module.js";
 import { TtsModule } from "./tts/tts.module.js";
 import { UsersModule } from "./users/users.module.js";
 import { WidgetsModule } from "./widgets/widgets.module.js";
@@ -43,7 +44,8 @@ import { RulesModule } from "./rules/rules.module.js";
     MockEventsModule,
     AuditLogsModule,
     PublicModule,
-    ChatSourcesModule
+    ChatSourcesModule,
+    MaintenanceModule
   ],
   controllers: [HealthController]
 })
