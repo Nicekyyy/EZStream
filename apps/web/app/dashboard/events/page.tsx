@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { ResourceCard } from "../../../components/resource-card";
-import { API_URL, api, getToken, resolveAssetUrl } from "../../../lib/api";
+import { API_URL, api, ensureSession, resolveAssetUrl } from "../../../lib/api";
 
 type EventLog = {
   id: string;
@@ -169,25 +169,29 @@ export default function EventsPage() {
   }, []);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, {
-      transports: ["websocket"],
-      auth: { token }
-    });
-    socketRef.current = socket;
+    let socket: Socket | null = null;
+    let closed = false;
+    void ensureSession().then((token) => {
+      if (closed) return;
+      socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? API_URL, {
+        transports: ["websocket"],
+        auth: { token }
+      });
+      socketRef.current = socket;
 
-    socket.on("connect", () => {
-      socket.emit("creator.join");
-    });
+      socket.on("connect", () => {
+        socket!.emit("creator.join");
+      });
 
-    socket.on("event.logged", (payload: EventLog) => {
-      if (!isNonChatEvent(payload)) return;
-      setEvents((prev) => mergeEvents(prev, [payload]));
+      socket.on("event.logged", (payload: EventLog) => {
+        if (!isNonChatEvent(payload)) return;
+        setEvents((prev) => mergeEvents(prev, [payload]));
+      });
     });
 
     return () => {
-      socket.close();
+      closed = true;
+      socket?.close();
       socketRef.current = null;
     };
   }, []);
