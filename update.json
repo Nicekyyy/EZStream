@@ -4,7 +4,7 @@
   "pub_date": "2026-07-13T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "REPLACE_WITH_SIGNATURE_FROM_GITHUB_RELEASE",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTN3ZGYndFVE1SREtjazZCY0dIMXJ1NmxEUVBTYzVmcmFmcUdLTWJ6ZHFtVXg3WVVSTE54R0VjeXUvbXlKSnF3bWg2UFNBN1Y2V3IycDZPMi9TOGZ5VkY5cnRCVHRuSmdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzODkwNDAyCWZpbGU6ZXpzdHJlYW1fMS4xLjJfeDY0LXNldHVwLmV4ZQptbXlGTWdEMHNEZ1BVbXdEVURXVWpJcDNUTWswZ3EycVBiVHRycC9BcW5iRWdwckg0LzNsL1Y5Vkk5Q1lPMnk2L0lzL0JYSVBLaFFYb1BZaEZZUHFCQT09Cg==",
       "url": "https://github.com/Nicekyyy/EZStream/releases/download/v1.1.2/ezstream_1.1.2_x64-setup.exe"
     }
   }
