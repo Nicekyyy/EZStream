@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
-  "notes": "เพิ่มฟีเจอร์ใหม่และแก้ไขบั๊ก (v1.0.0)",
-  "pub_date": "2026-06-29T16:00:00Z",
+  "version": "1.1.0",
+  "notes": "เพิ่มฟีเจอร์ใหม่และแก้ไขบั๊ก (v1.1.0)",
+  "pub_date": "2026-07-13T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "REPLACE_WITH_SIGNATURE_FROM_GITHUB_RELEASE",
-      "url": "https://github.com/Nicekyyy/EZStream/releases/download/v1.0.0/EZStream_1.0.0_x64_en-US.msi.zip"
+      "url": "https://github.com/Nicekyyy/EZStream/releases/download/v1.1.0/EZStream_1.1.0_x64_en-US.msi.zip"
     }
   }
 }
