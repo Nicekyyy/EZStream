@@ -72,7 +72,15 @@ export function AlertWidgetSettings({ busy, draft, isDirty, onDraftChange, onSav
               <Textarea disabled={busy} rows={2} value={draft.template} onChange={(event) => setValue("template", event.target.value)} />
             </Field>
           </div>
-          <RangeField disabled={busy} label="ระยะเวลาแสดงเริ่มต้น (ms, 0 = แสดงตลอด)" min={0} max={30000} step={500} value={draft.defaultDurationMs} onChange={(value) => setValue("defaultDurationMs", value)} />
+          <RangeField
+            disabled={busy}
+            label="ระยะเวลาแสดงเริ่มต้น (วินาที, 0 = แสดงตลอด)"
+            min={0}
+            max={30}
+            step={0.5}
+            value={draft.defaultDurationMs / 1000}
+            onChange={(value) => setValue("defaultDurationMs", Math.round(value * 1000))}
+          />
           <ToggleField disabled={busy} label="แสดงป้ายคำว่า Alert" checked={draft.showLabel} onChange={(value) => setValue("showLabel", value)} />
         </div>
       </SettingsSection>

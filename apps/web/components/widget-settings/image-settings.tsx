@@ -90,7 +90,15 @@ export function ImageWidgetSettings({ busy, draft, isDirty, mediaAssets, onDraft
             </Select>
           </Field>
           {draft.showMode === "triggered" ? (
-            <RangeField disabled={busy} label="ระยะเวลาแสดงเมื่อ trigger (ms)" min={500} max={30000} step={500} value={draft.defaultDurationMs} onChange={(value) => setValue("defaultDurationMs", value)} />
+            <RangeField
+              disabled={busy}
+              label="ระยะเวลาแสดงเมื่อ trigger (วินาที)"
+              min={0.5}
+              max={30}
+              step={0.5}
+              value={draft.defaultDurationMs / 1000}
+              onChange={(value) => setValue("defaultDurationMs", Math.round(value * 1000))}
+            />
           ) : null}
         </div>
       </SettingsSection>

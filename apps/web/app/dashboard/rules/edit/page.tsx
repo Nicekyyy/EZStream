@@ -285,8 +285,14 @@ function ActionEditor({
           ) : null}
 
           {needsDuration ? (
-            <Field label="ระยะเวลาแสดง (ms)">
-              <Input type="number" min={500} value={action.durationMs ?? 5000} onChange={(event) => onChange({ ...action, durationMs: Number(event.target.value) })} />
+            <Field label="ระยะเวลาแสดง (วินาที)">
+              <Input
+                type="number"
+                min={0.5}
+                step={0.5}
+                value={(action.durationMs ?? 5000) / 1000}
+                onChange={(event) => onChange({ ...action, durationMs: Math.round(Number(event.target.value) * 1000) })}
+              />
             </Field>
           ) : null}
 
