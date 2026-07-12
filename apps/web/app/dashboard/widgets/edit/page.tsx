@@ -18,6 +18,8 @@ import { CheckIcon, CopyIcon } from "../../../../components/icons";
 import { NumberField } from "../../../../components/widget-settings/fields";
 import { chatSettingsFromConfig, ChatWidgetSettings, type ChatSettingsDraft } from "../../../../components/widget-settings/chat-settings";
 import { viewerCountSettingsFromConfig, ViewerCountWidgetSettings } from "../../../../components/widget-settings/viewer-count-settings";
+import { alertSettingsFromConfig, AlertWidgetSettings, type AlertSettingsDraft } from "../../../../components/widget-settings/alert-settings";
+import { goalSettingsFromConfig, GoalWidgetSettings, type GoalSettingsDraft } from "../../../../components/widget-settings/goal-settings";
 
 type Overlay = { id: string; name: string; token: string; width: number; height: number };
 type EventLog = { id: string; eventType: string; payload: unknown; createdAt: string };
@@ -53,6 +55,10 @@ function draftFromWidget(widget: Widget): Record<string, unknown> | null {
       return chatSettingsFromConfig(config);
     case "VIEWER_COUNT_WIDGET":
       return viewerCountSettingsFromConfig(config);
+    case "ALERT_WIDGET":
+      return alertSettingsFromConfig(config);
+    case "GOAL_WIDGET":
+      return goalSettingsFromConfig(config);
     default:
       return null;
   }
@@ -483,6 +489,14 @@ function WidgetDetailContent() {
 
           {widget && configDraft && widget.type === "VIEWER_COUNT_WIDGET" ? (
             <ViewerCountWidgetSettings busy={busy} draft={configDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "ALERT_WIDGET" ? (
+            <AlertWidgetSettings busy={busy} draft={configDraft as AlertSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
+          ) : null}
+
+          {widget && configDraft && widget.type === "GOAL_WIDGET" ? (
+            <GoalWidgetSettings busy={busy} draft={configDraft as GoalSettingsDraft} isDirty={isConfigDirty} onDraftChange={setConfigDraft} onSave={saveConfigSettings} />
           ) : null}
 
           <ResourceCard>
