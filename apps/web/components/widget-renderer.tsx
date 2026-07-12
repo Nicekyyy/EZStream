@@ -5,6 +5,7 @@ import type { UnifiedChatMessage } from "@ezstream/shared";
 import { TiktokIcon, YoutubeIcon, TwitchIcon } from "./icons";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_URL } from "../lib/api";
+import { isAudioOnlyWidgetType } from "../lib/widget-types";
 
 export type OverlayWidget = {
   id: string;
@@ -234,10 +235,15 @@ export const WidgetRenderer = memo(function WidgetRenderer({ widget, chatMessage
 
   const showBackground = widget.type === "VIEWER_COUNT_WIDGET" ? bool(config.showBackground, true) : true;
 
+  if (isAudioOnlyWidgetType(widget.type)) {
+    return widget.type === "SOUND_WIDGET" && audioSource ? (
+      <audio ref={audioRef} src={audioSource} preload="auto" />
+    ) : null;
+  }
+
   return (
     <section className="absolute overflow-hidden rounded-none text-white" style={style}>
       {body}
-      {widget.type === "SOUND_WIDGET" && audioSource ? <audio ref={audioRef} src={audioSource} preload="auto" /> : null}
     </section>
   );
 });
