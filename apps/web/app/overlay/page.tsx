@@ -6,6 +6,7 @@ import { io } from "socket.io-client";
 import { Rnd } from "react-rnd";
 import { WidgetRenderer, type OverlayWidget } from "../../components/widget-renderer";
 import { API_URL, resolveAssetUrl } from "../../lib/api";
+import { isAudioOnlyWidgetType } from "../../lib/widget-types";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 
 type OverlayState = {
@@ -363,6 +364,7 @@ function OverlayContent() {
       <div ref={guidesRef} className="pointer-events-none absolute inset-0 z-[9999]" />
       {state?.widgets.map((widget) => {
         if (isEditor) {
+          if (isAudioOnlyWidgetType(widget.type)) return null;
           return (
             <Rnd
               key={widget.id}
