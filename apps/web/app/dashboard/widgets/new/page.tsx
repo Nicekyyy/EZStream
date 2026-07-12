@@ -8,6 +8,7 @@ import { ResourceCard } from "../../../../components/resource-card";
 import { Field, Input, Notice, Select } from "../../../../components/ui-kit";
 import { api } from "../../../../lib/api";
 import { useUnsavedChangesWarning } from "../../../../lib/use-unsaved-changes-warning";
+import { isAudioOnlyWidgetType } from "../../../../lib/widget-types";
 
 const widgetTypes = [
   "CHAT_WIDGET",
@@ -102,14 +103,16 @@ export default function NewWidgetPage() {
             </Select>
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="กว้าง">
-              <Input min={1} onChange={(event) => setWidth(Number(event.target.value))} type="number" value={width} />
-            </Field>
-            <Field label="สูง">
-              <Input min={1} onChange={(event) => setHeight(Number(event.target.value))} type="number" value={height} />
-            </Field>
-          </div>
+          {isAudioOnlyWidgetType(type) ? null : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="กว้าง">
+                <Input min={1} onChange={(event) => setWidth(Number(event.target.value))} type="number" value={width} />
+              </Field>
+              <Field label="สูง">
+                <Input min={1} onChange={(event) => setHeight(Number(event.target.value))} type="number" value={height} />
+              </Field>
+            </div>
+          )}
 
           <div className="flex flex-col md:flex-row md:items-center gap-2 pt-2">
             <Button 
