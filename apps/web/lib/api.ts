@@ -41,4 +41,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
+// API-served asset paths (e.g. /storage/tts/x.mp3) need the API origin —
+// the web app runs on a different port in dev.
+export function resolveAssetUrl(src: string) {
+  return src.startsWith("/") ? `${API_URL}${src}` : src;
+}
+
 export { API_URL, APP_URL };

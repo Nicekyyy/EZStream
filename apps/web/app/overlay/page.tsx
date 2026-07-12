@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { io } from "socket.io-client";
 import { Rnd } from "react-rnd";
 import { WidgetRenderer, type OverlayWidget } from "../../components/widget-renderer";
-import { API_URL } from "../../lib/api";
+import { API_URL, resolveAssetUrl } from "../../lib/api";
 import type { UnifiedChatMessage } from "@ezstream/shared";
 
 type OverlayState = {
@@ -65,6 +65,7 @@ function OverlayContent() {
   const ttsQueue = useRef<TtsPayload[]>([]);
   const isSpeaking = useRef(false);
   const currentAudio = useRef<HTMLAudioElement | null>(null);
+  const ttsWidgetVolume = useRef(1);
   const [chatMessages, setChatMessages] = useState<UnifiedChatMessage[]>([]);
   const guidesRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLElement>(null);
@@ -226,15 +227,21 @@ function OverlayContent() {
     setContextMenu(null);
   };
 
+  useEffect(() => {
+    const ttsWidget = state?.widgets.find((item) => item.type === "TTS_WIDGET");
+    const raw = ttsWidget?.config?.volume;
+    ttsWidgetVolume.current = typeof raw === "number" && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+  }, [state]);
+
   function speakNext() {
     if (isSpeaking.current || typeof window === "undefined") return;
     const next = ttsQueue.current.shift();
     if (!next) return;
 
     if (next.audioUrl) {
-      const audio = new Audio(next.audioUrl);
+      const audio = new Audio(resolveAssetUrl(next.audioUrl));
       currentAudio.current = audio;
-      audio.volume = next.volume;
+      audio.volume = Math.min(1, Math.max(0, next.volume * ttsWidgetVolume.current));
       const finish = () => {
         currentAudio.current = null;
         isSpeaking.current = false;
@@ -256,7 +263,7 @@ function OverlayContent() {
     const utterance = new SpeechSynthesisUtterance(next.text);
     utterance.rate = next.speed;
     utterance.pitch = next.pitch;
-    utterance.volume = next.volume;
+    utterance.volume = Math.min(1, Math.max(0, next.volume * ttsWidgetVolume.current));
 
     const selectedVoice = selectVoice(next.voice);
     if (selectedVoice) utterance.voice = selectedVoice;
