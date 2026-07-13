@@ -67,4 +67,4 @@ Two paths: server-side **Google Cloud Text-to-Speech** (needs `GOOGLE_APPLICATIO
 
 ## Configuration
 
-Single root `.env` (loaded by api/web dev scripts via `dotenv -e ../../.env`). Notable vars: `DATABASE_URL` (SQLite file), `JWT_SECRET`/`JWT_EXPIRES_IN`, `API_PORT` (4000), `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_SOCKET_URL`, `LOCAL_STORAGE_ROOT` (media upload dir), `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_TTS_*`, `TIKTOK_SIGN_API_KEY`, `WORKER_CONCURRENCY`.
+Single root `.env` (loaded by api/web dev scripts via `dotenv -e ../../.env`). Notable vars: `DATABASE_URL` (SQLite file), `JWT_SECRET`/`JWT_EXPIRES_IN`, `API_PORT` (4000), `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_SOCKET_URL`, `LOCAL_STORAGE_ROOT` (media upload dir), `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_TTS_*`, `WORKER_CONCURRENCY`. TikTok's sign API key (eulerstream) is no longer a server-wide env var — each creator sets their own in `/dashboard/settings`, stored in `Creator.settings.tiktokSignApiKey`.
