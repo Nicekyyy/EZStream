@@ -20,7 +20,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
   private twitchGlobalBadges: any[] = [];
   // Chat messages arrive many times per second; don't hit SQLite for the same
   // chat source on every one of them.
-  private chatSourceCache = new Map<string, { source: (ChatSource & { overlay: Overlay }) | null; expiresAt: number }>();
+  private chatSourceCache = new Map<string, { source: (ChatSource & { overlay: Overlay; creator: { settings: Prisma.JsonValue } }) | null; expiresAt: number }>();
   private readonly chatSourceCacheTtlMs = 5000;
 
   constructor(
@@ -157,13 +157,16 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
       if (!this.isActiveChatConnection(chatSourceId, requestId)) return;
       const username = target.replace(/^@/, "");
 
+      const chatSource = await this.getChatSource(chatSourceId);
+      const creatorSettings = (chatSource?.creator.settings ?? {}) as Record<string, unknown>;
+      const signApiKey = typeof creatorSettings.tiktokSignApiKey === "string" ? creatorSettings.tiktokSignApiKey : undefined;
+
       for (const attempt of [
         { connectionId: `${requestId}:room`, connectWithUniqueId: false },
         { connectionId: `${requestId}:unique`, connectWithUniqueId: true }
       ]) {
         if (!this.activeChats.has(chatSourceId)) return;
 
-        const signApiKey = this.config.get<string>("TIKTOK_SIGN_API_KEY");
         const tiktok = new TikTokLiveConnection(username, {
           processInitialData: false,
           fetchRoomInfoOnConnect: false,
@@ -712,7 +715,7 @@ export class ChatConnectorService implements OnModuleInit, OnModuleDestroy {
     if (cached && cached.expiresAt > Date.now()) return cached.source;
     const source = await this.prisma.chatSource.findUnique({
       where: { id: chatSourceId },
-      include: { overlay: true }
+      include: { overlay: true, creator: { select: { settings: true } } }
     });
     this.chatSourceCache.set(chatSourceId, { source, expiresAt: Date.now() + this.chatSourceCacheTtlMs });
     return source;
