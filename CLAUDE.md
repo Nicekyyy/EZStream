@@ -55,7 +55,7 @@ pnpm monorepo (`apps/*`, `packages/*`). Everything is **ESM** (`"type": "module"
 ### Event → overlay flow
 
 1. A **live event** arrives — either from a real chat connector or from `mock-events` (dashboard testing).
-2. `chat-sources` connects directly to platforms in-process: **TikTok** (`tiktok-live-connector`), **YouTube** (`youtubei.js`), **Twitch** (`tmi.js`). `TIKTOK_SIGN_API_KEY` (eulerstream) is optional to bypass rate limits.
+2. `chat-sources` connects directly to platforms in-process: **TikTok** (`tiktok-live-connector`), **YouTube** (`youtubei.js`), **Twitch** (`tmi.js`). TikTok connections use a per-creator sign API key (eulerstream) to bypass rate limits, set by each creator in `/dashboard/settings` and stored in `Creator.settings.tiktokSignApiKey` — there is no server-wide fallback.
 3. `LiveEventsService.processEvent` logs the event and calls `RuleEngineService.evaluate` (`apps/api/src/rules/`), which matches the event against the creator's enabled `Rule` rows and runs their actions — `SPEAK_TTS` creates a `TtsJob`, everything else creates a `WidgetAction`.
 4. The `TtsJob` goes onto the **queue** (`queues/queues.service.ts`). This is an **in-process `InMemoryQueue`**, not BullMQ. Processing publishes results via the **`MockRedis`** pub/sub (`redis/redis.module.ts`), an in-memory `EventEmitter` bus — no real Redis is required or connected.
 5. The **realtime** Socket.IO gateway subscribes to those channels and pushes events to connected overlay clients.

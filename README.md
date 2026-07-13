@@ -135,7 +135,6 @@ http://localhost:3000/overlay/{overlayToken}
 | `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_SOCKET_URL` | URL ที่ web ใช้เรียก API และ Socket.IO |
 | `LOCAL_STORAGE_ROOT` | โฟลเดอร์เก็บไฟล์ media ที่อัปโหลด |
 | `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_TTS_*` | Credential และค่า config ของ Google Cloud TTS (server-side) |
-| `TIKTOK_SIGN_API_KEY` | (Optional) API key จาก eulerstream.com เพื่อลด rate limit ตอนเชื่อมต่อ TikTok |
 | `WORKER_CONCURRENCY` | จำนวน job ที่ประมวลผลพร้อมกันใน in-memory queue |
 
 ---
