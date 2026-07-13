@@ -10,6 +10,7 @@ type CreatorSettings = {
   googleTtsVoice?: string;
   ttsCooldownMs?: number;
   bannedWords?: string[];
+  tiktokSignApiKey?: string;
 };
 
 type Creator = {
@@ -35,6 +36,8 @@ export default function SettingsPage() {
   // Form state
   const [credentialsJson, setCredentialsJson] = useState("");
   const [credentialsMasked, setCredentialsMasked] = useState(false);
+  const [tiktokSignApiKey, setTiktokSignApiKey] = useState("");
+  const [tiktokKeyMasked, setTiktokKeyMasked] = useState(false);
 
   useEffect(() => {
     loadCreator();
@@ -50,6 +53,9 @@ export default function SettingsPage() {
         setCredentialsJson(""); // Don't show actual key
         setCredentialsMasked(true);
       }
+
+      setTiktokSignApiKey("");
+      setTiktokKeyMasked(Boolean(settings.tiktokSignApiKey));
     } catch (err) {
       setError(err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ");
     } finally {
@@ -89,6 +95,16 @@ export default function SettingsPage() {
         settings.googleTtsServiceAccountJson = credentialsJson.trim();
       }
 
+      // Only update the TikTok key if the user typed a new one. If they clicked
+      // "เปลี่ยน" but didn't type anything, `settings` still carries the spread-in
+      // redacted placeholder (`true`) from the existing creator settings above, and
+      // the server's merge-on-write logic (Task 1) restores the real stored value —
+      // same no-op-on-empty behavior as the Google TTS field. Explicit removal goes
+      // through the dedicated `removeTiktokKey` button below, not this form submit.
+      if (tiktokSignApiKey.trim()) {
+        settings.tiktokSignApiKey = tiktokSignApiKey.trim();
+      }
+
       await api("/creator/me", {
         method: "PATCH",
         body: JSON.stringify({ settings })
@@ -98,6 +114,10 @@ export default function SettingsPage() {
       if (credentialsJson.trim()) {
         setCredentialsJson("");
         setCredentialsMasked(true);
+      }
+      if (tiktokSignApiKey.trim()) {
+        setTiktokSignApiKey("");
+        setTiktokKeyMasked(true);
       }
       // Reload to get fresh data
       await loadCreator();
@@ -129,6 +149,31 @@ export default function SettingsPage() {
   function clearCredentials() {
     setCredentialsJson("");
     setCredentialsMasked(false);
+  }
+
+  function clearTiktokKey() {
+    setTiktokSignApiKey("");
+    setTiktokKeyMasked(false);
+  }
+
+  async function removeTiktokKey() {
+    setError("");
+    setMessage("");
+    setSaving(true);
+    try {
+      await api("/creator/me", {
+        method: "PATCH",
+        body: JSON.stringify({ settings: { ...(creator ? safeSettings(creator.settings) : {}), tiktokSignApiKey: "" } })
+      });
+      setMessage("ลบคีย์สำเร็จ ✓");
+      setTiktokSignApiKey("");
+      setTiktokKeyMasked(false);
+      await loadCreator();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ลบคีย์ไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
@@ -222,6 +267,60 @@ export default function SettingsPage() {
                     }}
                   />
                 </div>
+              </div>
+            )}
+          </div>
+        </ResourceCard>
+
+        {/* ─── TikTok Sign API Key ─── */}
+        <ResourceCard>
+          <div className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">TikTok Sign API Key (eulerstream)</h2>
+              <p className="text-sm text-ink-subtle mt-1">
+                ใช้ลดโอกาสโดน rate limit ตอนเชื่อมต่อแชท TikTok ขอคีย์ได้ที่ eulerstream.com ถ้าไม่กรอก ระบบจะเชื่อมต่อแบบไม่ signed
+              </p>
+            </div>
+
+            {tiktokKeyMasked && !tiktokSignApiKey.trim() ? (
+              <div className="flex items-center gap-3 bg-surface-dark border border-border-base px-4 py-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">✓</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-white">ตั้งค่าคีย์แล้ว</p>
+                  <p className="text-xs text-ink-subtle">TikTok Sign API Key ถูกบันทึกไว้เรียบร้อย</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearTiktokKey}
+                  className="text-xs text-ink-subtle hover:text-primary transition-colors"
+                >
+                  เปลี่ยน
+                </button>
+                <button
+                  type="button"
+                  onClick={removeTiktokKey}
+                  disabled={saving}
+                  className="text-xs text-ink-subtle hover:text-rose-400 transition-colors disabled:opacity-50"
+                >
+                  ลบคีย์
+                </button>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="tiktok-sign-api-key">
+                  Sign API Key
+                </label>
+                <input
+                  id="tiktok-sign-api-key"
+                  type="password"
+                  className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-600 focus:border-primary focus:outline-none"
+                  placeholder="ใส่ TikTok Sign API Key"
+                  value={tiktokSignApiKey}
+                  onChange={(e) => {
+                    setTiktokSignApiKey(e.target.value);
+                    setTiktokKeyMasked(false);
+                  }}
+                />
               </div>
             )}
           </div>
