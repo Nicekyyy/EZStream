@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { redactCreatorSettings } from "../common/redact-creator-settings.js";
+import { redactCreatorSettings, secretSettingsKeys } from "../common/redact-creator-settings.js";
 
 @Injectable()
 export class CreatorsService {
@@ -22,9 +22,13 @@ export class CreatorsService {
 
     // Preserve existing secret settings when the client only sends the redacted placeholder back.
     const nextSettings = data.settings as Record<string, unknown> | undefined;
-    if (nextSettings && nextSettings.googleTtsServiceAccountJson === true) {
+    if (nextSettings) {
       const existingSettings = existing.settings as Record<string, unknown>;
-      nextSettings.googleTtsServiceAccountJson = existingSettings?.googleTtsServiceAccountJson;
+      for (const key of secretSettingsKeys) {
+        if (nextSettings[key] === true) {
+          nextSettings[key] = existingSettings?.[key];
+        }
+      }
     }
 
     const updated = await this.prisma.creator.update({

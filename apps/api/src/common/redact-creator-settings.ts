@@ -1,4 +1,4 @@
-const secretSettingsKeys = ["googleTtsServiceAccountJson"];
+export const secretSettingsKeys = ["googleTtsServiceAccountJson", "tiktokSignApiKey"];
 
 export function redactCreatorSettings<T extends { settings?: unknown }>(creator: T): T {
   if (!creator || typeof creator.settings !== "object" || !creator.settings || Array.isArray(creator.settings)) {
